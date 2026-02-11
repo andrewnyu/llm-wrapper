@@ -1,0 +1,31 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verify 2FA · API Key Wrapper</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}" />
+</head>
+<body>
+    <div class="auth-layout">
+        <div class="auth-card">
+            <h1>Verify code</h1>
+            <p class="muted">Enter the code from your authenticator app.</p>
+            {% if messages %}
+                <div class="messages">
+                    {% for message in messages %}
+                        <div class="message {{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <form method="post">
+                {% csrf_token %}
+                <label>Verification code</label>
+                {{ form.code }}
+                <button type="submit" class="primary">Verify</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

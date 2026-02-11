@@ -1,0 +1,41 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}API Key Wrapper{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}" />
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">API Key Wrapper</div>
+            <nav class="nav">
+                <a href="/chat/">Chat</a>
+                <a href="/image/">Image</a>
+                <a href="/keys/">API Keys</a>
+                <a href="/account/">Account</a>
+            </nav>
+            {% if request.user.is_authenticated %}
+                <div class="sidebar-footer">
+                    <div class="user">{{ request.user.email }}</div>
+                    <a class="link" href="/account/logout/">Log out</a>
+                </div>
+            {% endif %}
+        </aside>
+        <main class="content">
+            <div class="card">
+                {% if messages %}
+                    <div class="messages">
+                        {% for message in messages %}
+                            <div class="message {{ message.tags }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</body>
+</html>

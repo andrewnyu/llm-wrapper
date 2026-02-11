@@ -1,0 +1,33 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login · API Key Wrapper</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}" />
+</head>
+<body>
+    <div class="auth-layout">
+        <div class="auth-card">
+            <h1>Welcome back</h1>
+            <p class="muted">Sign in with your email and password.</p>
+            {% if messages %}
+                <div class="messages">
+                    {% for message in messages %}
+                        <div class="message {{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <form method="post">
+                {% csrf_token %}
+                <label>Email</label>
+                {{ form.email }}
+                <label>Password</label>
+                {{ form.password }}
+                <button type="submit" class="primary">Sign in</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

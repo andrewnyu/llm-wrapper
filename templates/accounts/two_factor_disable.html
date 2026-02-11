@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Disable 2FA · API Key Wrapper{% endblock %}
+{% block content %}
+<h1>Disable 2FA</h1>
+<p class="muted">This removes your authenticator device from the account.</p>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="danger">Disable 2FA</button>
+    <a class="button" href="/account/">Cancel</a>
+</form>
+{% endblock %}

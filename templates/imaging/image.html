@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Image · API Key Wrapper{% endblock %}
+{% block content %}
+<h1>Nano Banana</h1>
+<p class="muted">Generate images from a prompt.</p>
+<div class="panel">
+    <label>Prompt</label>
+    <textarea id="image-prompt" rows="3" placeholder="Describe your image..."></textarea>
+    <div class="actions">
+        <button id="generate" class="primary">Generate</button>
+    </div>
+</div>
+<h2>Recent results</h2>
+<div id="image-grid" class="image-grid">
+    {% for job in jobs %}
+        {% for url in job.result_urls %}
+            <img src="{{ url }}" alt="Generated image" />
+        {% endfor %}
+    {% empty %}
+        <p class="muted">No images yet.</p>
+    {% endfor %}
+</div>
+
+<script>
+    const promptInput = document.getElementById('image-prompt');
+    const generateButton = document.getElementById('generate');
+    const imageGrid = document.getElementById('image-grid');
+    const csrfToken = '{{ csrf_token }}';
+
+    function addImage(urlOrBase64) {
+        const img = document.createElement('img');
+        img.src = urlOrBase64;
+        img.alt = 'Generated image';
+        imageGrid.prepend(img);
+    }
+
+    generateButton.addEventListener('click', async () => {
+        const prompt = promptInput.value.trim();
+        if (!prompt) {
+            return;
+        }
+        generateButton.disabled = true;
+        try {
+            const response = await fetch('/api/image/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({ prompt }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                alert(data.error || 'Request failed');
+                return;
+            }
+            (data.images || []).forEach(image => {
+                if (image.url) {
+                    addImage(image.url);
+                } else if (image.base64) {
+                    addImage(image.base64);
+                }
+            });
+            promptInput.value = '';
+        } catch (error) {
+            alert('Network error');
+        } finally {
+            generateButton.disabled = false;
+        }
+    });
+</script>
+{% endblock %}

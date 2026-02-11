@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Enable 2FA · API Key Wrapper{% endblock %}
+{% block content %}
+<h1>Enable 2FA</h1>
+<p class="muted">Scan the QR code with Google Authenticator, then enter the 6-digit code to confirm.</p>
+<div class="panel grid-2">
+    <div>
+        <img src="{{ qr_data_uri }}" alt="QR code" class="qr" />
+        <p class="muted">Manual code: <code>{{ secret }}</code></p>
+    </div>
+    <div>
+        <form method="post">
+            {% csrf_token %}
+            <label>Verification code</label>
+            {{ form.code }}
+            <button type="submit" class="primary">Enable 2FA</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
