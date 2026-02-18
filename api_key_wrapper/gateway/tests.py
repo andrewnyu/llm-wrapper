@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
-from api_key_wrapper.accounts.models import User
+from api_key_wrapper.accounts.models import TwoFactorDevice, User
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult
 
 
@@ -15,6 +15,7 @@ class ChatApiTests(TestCase):
             email="tester@example.com",
             password="TestPass123!",
         )
+        TwoFactorDevice.objects.create(user=self.user, secret="JBSWY3DPEHPK3PXP", confirmed=True)
 
     def test_chat_complete_success(self):
         self.client.login(username="tester", password="TestPass123!")

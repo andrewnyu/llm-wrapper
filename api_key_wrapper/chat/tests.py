@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
-from api_key_wrapper.accounts.models import User
+from api_key_wrapper.accounts.models import TwoFactorDevice, User
 from api_key_wrapper.chat.models import Conversation, Message
 
 
@@ -14,6 +14,7 @@ class ChatApiTests(TestCase):
             email="chatuser@example.com",
             password="TestPass123!",
         )
+        TwoFactorDevice.objects.create(user=self.user, secret="JBSWY3DPEHPK3PXP", confirmed=True)
         self.client.login(username="chatuser", password="TestPass123!")
 
     def test_conversation_crud(self):

@@ -20,7 +20,7 @@ class AuthFlowTests(TestCase):
             {"email": "tester@example.com", "password": self.password},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/chat/")
+        self.assertEqual(response["Location"], "/account/2fa/setup/")
 
     def test_login_requires_2fa(self):
         secret = pyotp.random_base32()
@@ -40,3 +40,16 @@ class AuthFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/chat/")
+
+    def test_api_blocked_until_2fa_enabled(self):
+        self.client.post(
+            reverse("accounts:login"),
+            {"email": "tester@example.com", "password": self.password},
+        )
+        response = self.client.post(
+            reverse("chat_complete"),
+            data='{"provider":"openai","model":"gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Two-factor authentication is required.")

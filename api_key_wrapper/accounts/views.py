@@ -27,7 +27,8 @@ def login_view(request):
                 request.session["pre_2fa_user_id"] = user.id
                 return redirect("accounts:two_factor_verify")
             login(request, user)
-            return redirect("chat:chat")
+            messages.info(request, "Two-factor authentication is required. Please set it up.")
+            return redirect("accounts:two_factor_setup")
 
         messages.error(request, "Invalid email or password.")
 
