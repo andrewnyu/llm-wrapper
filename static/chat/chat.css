@@ -374,11 +374,16 @@ body {
     outline: none;
     resize: none;
     background: transparent;
+    font-family: "Avenir Next", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     min-height: 30px;
     max-height: 180px;
     font-size: 0.95rem;
     line-height: 1.35;
     padding: 8px 0;
+}
+
+.composer textarea::placeholder {
+    font-family: "Avenir Next", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .composer-actions {

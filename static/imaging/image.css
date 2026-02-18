@@ -1,0 +1,215 @@
+:root {
+    --img-bg: #f0f2f5;
+    --img-card: #ffffff;
+    --img-text: #1c1e21;
+    --img-muted: #65676b;
+    --img-primary: #0084ff;
+    --img-grad: linear-gradient(135deg, #0084ff, #3baaff);
+    --img-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.08);
+    --img-radius-card: 16px;
+    --img-radius-composer: 24px;
+}
+
+body {
+    font-family: "Avenir Next", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: var(--img-bg);
+    color: var(--img-text);
+}
+
+.image-page {
+    min-height: calc(100vh - 64px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 14px;
+}
+
+.image-header {
+    background: var(--img-card);
+    border-radius: var(--img-radius-card);
+    box-shadow: var(--img-shadow-soft);
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.image-header h1 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.image-header .muted {
+    margin: 4px 0 0;
+}
+
+.app-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.app-tab {
+    color: var(--img-muted);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: transparent;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.app-tab:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--img-text);
+}
+
+.app-tab.active {
+    color: var(--img-primary);
+    background: rgba(0, 132, 255, 0.13);
+}
+
+.image-feed {
+    background: var(--img-card);
+    border-radius: var(--img-radius-card);
+    box-shadow: var(--img-shadow-soft);
+    padding: 16px;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.image-grid-pro {
+    height: 100%;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+    padding-right: 2px;
+}
+
+.image-card {
+    margin: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--img-shadow-soft);
+    background: #eef2f7;
+    animation: img-in 0.24s ease both;
+}
+
+.image-card img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+}
+
+.image-empty {
+    grid-column: 1 / -1;
+    color: var(--img-muted);
+    text-align: center;
+    padding: 36px 12px;
+    font-size: 0.93rem;
+}
+
+.image-composer-wrap {
+    position: sticky;
+    bottom: 0;
+    padding: 2px 2px 0;
+}
+
+.image-composer {
+    background: #fff;
+    border-radius: var(--img-radius-composer);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.09);
+    padding: 8px 10px 8px 14px;
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.image-composer textarea {
+    border: none;
+    outline: none;
+    resize: none;
+    background: transparent;
+    font-family: "Avenir Next", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    min-height: 30px;
+    max-height: 180px;
+    padding: 8px 0;
+    font-size: 0.95rem;
+    line-height: 1.35;
+}
+
+.image-composer textarea::placeholder {
+    font-family: "Avenir Next", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.generate-btn {
+    border: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--img-grad);
+    color: #fff;
+    box-shadow: 0 6px 14px rgba(0, 132, 255, 0.3);
+    cursor: pointer;
+    font-size: 1rem;
+    display: grid;
+    place-items: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.generate-btn:hover {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 8px 18px rgba(0, 132, 255, 0.34);
+}
+
+.generate-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.composer-status {
+    margin: 8px 8px 0;
+    color: var(--img-muted);
+    font-size: 0.8rem;
+}
+
+.hidden {
+    display: none !important;
+}
+
+@keyframes img-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 980px) {
+    .image-page {
+        min-height: calc(100vh - 32px);
+        gap: 10px;
+    }
+
+    .image-feed {
+        padding: 12px;
+    }
+
+    .image-grid-pro {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 10px;
+    }
+
+    .app-tabs {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+}

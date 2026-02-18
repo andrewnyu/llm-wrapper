@@ -1,72 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Image · API Key Wrapper{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/imaging/image.css" />
+{% endblock %}
 {% block content %}
-<h1>Nano Banana</h1>
-<p class="muted">Generate images from a prompt.</p>
-<div class="panel">
-    <label>Prompt</label>
-    <textarea id="image-prompt" rows="3" placeholder="Describe your image..."></textarea>
-    <div class="actions">
-        <button id="generate" class="primary">Generate</button>
-    </div>
-</div>
-<h2>Recent results</h2>
-<div id="image-grid" class="image-grid">
-    {% for job in jobs %}
-        {% for url in job.result_urls %}
-            <img src="{{ url }}" alt="Generated image" />
-        {% endfor %}
-    {% empty %}
-        <p class="muted">No images yet.</p>
-    {% endfor %}
-</div>
+<section class="image-page" id="image-app" data-csrf-token="{{ csrf_token }}">
+    <header class="image-header">
+        <div>
+            <h1>Image Studio</h1>
+            <p class="muted">Describe your image and generate with Nano Banana.</p>
+        </div>
+        <nav class="app-tabs" aria-label="App sections">
+            <a class="app-tab" href="/chat/">Chat</a>
+            <a class="app-tab active" href="/image/">Image</a>
+            <a class="app-tab" href="/keys/">API Keys</a>
+            <a class="app-tab" href="/account/">Settings</a>
+        </nav>
+    </header>
 
-<script>
-    const promptInput = document.getElementById('image-prompt');
-    const generateButton = document.getElementById('generate');
-    const imageGrid = document.getElementById('image-grid');
-    const csrfToken = '{{ csrf_token }}';
+    <section class="image-feed">
+        <div id="image-grid" class="image-grid-pro">
+            {% for job in jobs %}
+                {% for url in job.result_urls %}
+                    <figure class="image-card">
+                        <img src="{{ url }}" alt="Generated image" />
+                    </figure>
+                {% endfor %}
+            {% empty %}
+                <div id="image-empty" class="image-empty">No images yet. Describe something to create your first image.</div>
+            {% endfor %}
+        </div>
+    </section>
 
-    function addImage(urlOrBase64) {
-        const img = document.createElement('img');
-        img.src = urlOrBase64;
-        img.alt = 'Generated image';
-        imageGrid.prepend(img);
-    }
+    <footer class="image-composer-wrap">
+        <div class="image-composer">
+            <textarea id="image-prompt" rows="1" placeholder="Describe your image..." maxlength="2000"></textarea>
+            <button id="generate" class="generate-btn" type="button" aria-label="Generate image">✦</button>
+        </div>
+        <p id="image-status" class="composer-status hidden"></p>
+    </footer>
+</section>
 
-    generateButton.addEventListener('click', async () => {
-        const prompt = promptInput.value.trim();
-        if (!prompt) {
-            return;
-        }
-        generateButton.disabled = true;
-        try {
-            const response = await fetch('/api/image/generate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken,
-                },
-                body: JSON.stringify({ prompt }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                alert(data.error || 'Request failed');
-                return;
-            }
-            (data.images || []).forEach(image => {
-                if (image.url) {
-                    addImage(image.url);
-                } else if (image.base64) {
-                    addImage(image.base64);
-                }
-            });
-            promptInput.value = '';
-        } catch (error) {
-            alert('Network error');
-        } finally {
-            generateButton.disabled = false;
-        }
-    });
-</script>
+<script type="module" src="/static/imaging/image.js"></script>
 {% endblock %}
