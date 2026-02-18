@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.conf import settings
 from django.http import JsonResponse
 
-from api_key_wrapper.chat.models import ChatMessage, ChatSession
+from api_key_wrapper.chat.models import Conversation, Message
 from api_key_wrapper.imaging.models import ImageJob
 
 from .models import ProviderKey
@@ -58,30 +58,30 @@ def chat_complete(request):
 
     session = None
     if session_id:
-        session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+        session = Conversation.objects.filter(id=session_id, user=request.user).first()
 
     if not session:
         title = next((m.get("content") for m in messages if m.get("role") == "user"), "New Chat")
         title = (title or "New Chat")[:60]
-        session = ChatSession.objects.create(
+        session = Conversation.objects.create(
             user=request.user,
             title=title,
-            provider=provider,
-            model=model,
         )
 
     latest_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
     if latest_user:
-        ChatMessage.objects.create(
-            session=session,
+        Message.objects.create(
+            conversation=session,
             role="user",
             content=latest_user.get("content", ""),
+            model=model,
         )
 
-    ChatMessage.objects.create(
-        session=session,
+    Message.objects.create(
+        conversation=session,
         role="assistant",
         content=result.text,
+        model=model,
     )
 
     return JsonResponse(

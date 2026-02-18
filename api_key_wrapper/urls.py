@@ -9,5 +9,6 @@ urlpatterns = [
     path("chat/", include("api_key_wrapper.chat.urls")),
     path("image/", include("api_key_wrapper.imaging.urls")),
     path("keys/", include("api_key_wrapper.gateway.urls")),
+    path("api/", include("api_key_wrapper.chat.api_urls")),
     path("api/", include("api_key_wrapper.gateway.api_urls")),
 ]

@@ -26,7 +26,7 @@ class ChatApiTests(TestCase):
         self.client.login(username="tester", password="TestPass123!")
 
         mock_result = ChatCompletionResult(text="Hello from OpenAI")
-        with patch("api_key_wrapper.gateway.providers.registry.get_provider_client") as mock_client:
+        with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
             mock_client.return_value.chat_complete.return_value = mock_result
             response = self.client.post(
                 reverse("chat_complete"),

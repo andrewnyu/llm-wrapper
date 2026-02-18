@@ -1,94 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Chat · API Key Wrapper{% endblock %}
 {% block content %}
-<h1>Chat</h1>
-<div class="controls">
-    <label>Provider</label>
-    <select id="provider">
-        {% for value, label in provider_choices %}
-            <option value="{{ value }}">{{ label }}</option>
-        {% endfor %}
-    </select>
-    <label>Model</label>
-    <input id="model" type="text" value="gpt-4o-mini" />
+<div class="chat-app" id="chat-app" data-csrf-token="{{ csrf_token }}">
+    <aside class="chat-conversations">
+        <div class="chat-conversations-header">
+            <h2>Chats</h2>
+            <button id="new-chat-btn" class="primary">New Chat</button>
+        </div>
+        <div id="conversation-list" class="conversation-list"></div>
+    </aside>
+    <section class="chat-thread">
+        <div id="thread-empty" class="thread-empty">Start a conversation to begin.</div>
+        <div id="message-list" class="message-list" aria-live="polite"></div>
+        <button id="jump-latest-btn" class="jump-latest hidden">Jump to latest</button>
+        <div class="composer">
+            <textarea
+                id="composer-input"
+                rows="1"
+                maxlength="8000"
+                placeholder="Message..."
+            ></textarea>
+            <div class="composer-actions">
+                <button id="stop-btn" class="danger hidden" type="button">Stop</button>
+                <button id="send-btn" class="primary" type="button">Send</button>
+            </div>
+        </div>
+    </section>
 </div>
-<div id="chat-log" class="chat-log"></div>
-<div class="chat-input">
-    <textarea id="message" rows="3" placeholder="Type your message..."></textarea>
-    <button id="send" class="primary">Send</button>
-</div>
-
-{{ model_defaults|json_script:"model-defaults" }}
-<script>
-    const modelDefaults = JSON.parse(document.getElementById('model-defaults').textContent);
-    const providerSelect = document.getElementById('provider');
-    const modelInput = document.getElementById('model');
-    const sendButton = document.getElementById('send');
-    const messageInput = document.getElementById('message');
-    const chatLog = document.getElementById('chat-log');
-    const csrfToken = '{{ csrf_token }}';
-
-    let messages = [];
-    let sessionId = null;
-
-    function renderMessage(role, content) {
-        const wrapper = document.createElement('div');
-        wrapper.className = `chat-bubble ${role}`;
-        wrapper.innerText = content;
-        chatLog.appendChild(wrapper);
-        chatLog.scrollTop = chatLog.scrollHeight;
-    }
-
-    function updateModelDefaults() {
-        const provider = providerSelect.value;
-        const defaults = modelDefaults[provider] || [];
-        if (defaults.length && !defaults.includes(modelInput.value)) {
-            modelInput.value = defaults[0];
-        }
-    }
-
-    providerSelect.addEventListener('change', updateModelDefaults);
-
-    sendButton.addEventListener('click', async () => {
-        const content = messageInput.value.trim();
-        if (!content) {
-            return;
-        }
-        const provider = providerSelect.value;
-        const model = modelInput.value.trim();
-
-        const userMessage = { role: 'user', content };
-        messages.push(userMessage);
-        renderMessage('user', content);
-        messageInput.value = '';
-
-        try {
-            const response = await fetch('/api/chat/complete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken,
-                },
-                body: JSON.stringify({
-                    provider,
-                    model,
-                    messages,
-                    session_id: sessionId,
-                }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                renderMessage('system', data.error || 'Request failed');
-                return;
-            }
-            sessionId = data.session_id || sessionId;
-            messages.push({ role: 'assistant', content: data.text });
-            renderMessage('assistant', data.text);
-        } catch (error) {
-            renderMessage('system', 'Network error.');
-        }
-    });
-
-    updateModelDefaults();
-</script>
+<script type="module" src="/static/chat/app.js"></script>
 {% endblock %}
