@@ -1,31 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Chat · API Key Wrapper{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/chat/chat.css" />
+{% endblock %}
 {% block content %}
-<div class="chat-app" id="chat-app" data-csrf-token="{{ csrf_token }}">
-    <aside class="chat-conversations">
-        <div class="chat-conversations-header">
-            <h2>Chats</h2>
-            <button id="new-chat-btn" class="primary">New Chat</button>
-        </div>
-        <div id="conversation-list" class="conversation-list"></div>
+<section class="messenger" id="chat-app" data-csrf-token="{{ csrf_token }}">
+    <button id="sidebar-overlay" class="sidebar-overlay hidden" type="button" aria-label="Close conversations"></button>
+
+    <aside id="chat-sidebar" class="messenger-sidebar">
+        <header class="sidebar-header">
+            <h1>Chats</h1>
+            <button id="close-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="Close sidebar">✕</button>
+        </header>
+
+        <button id="new-chat-btn" class="new-chat-btn" type="button">+ New chat</button>
+        <nav id="conversation-list" class="conversation-list" aria-label="Conversations"></nav>
     </aside>
-    <section class="chat-thread">
-        <div id="thread-empty" class="thread-empty">Start a conversation to begin.</div>
-        <div id="message-list" class="message-list" aria-live="polite"></div>
-        <button id="jump-latest-btn" class="jump-latest hidden">Jump to latest</button>
-        <div class="composer">
-            <textarea
-                id="composer-input"
-                rows="1"
-                maxlength="8000"
-                placeholder="Message..."
-            ></textarea>
-            <div class="composer-actions">
-                <button id="stop-btn" class="danger hidden" type="button">Stop</button>
-                <button id="send-btn" class="primary" type="button">Send</button>
+
+    <main class="messenger-main">
+        <header class="thread-header">
+            <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="Open conversations">☰</button>
+            <div class="thread-title-wrap">
+                <h2 id="thread-title">New chat</h2>
+                <p class="thread-subtitle">Ask anything</p>
             </div>
+        </header>
+
+        <div class="thread-stage">
+            <div id="thread-empty" class="thread-empty">Start a conversation to begin.</div>
+            <div id="message-list" class="message-list" aria-live="polite"></div>
+            <button id="jump-latest-btn" class="jump-latest hidden" type="button">Jump to latest</button>
         </div>
-    </section>
-</div>
+
+        <footer class="composer-wrap">
+            <div class="composer">
+                <textarea
+                    id="composer-input"
+                    rows="1"
+                    maxlength="8000"
+                    placeholder="Type a message"
+                ></textarea>
+                <div class="composer-actions">
+                    <button id="stop-btn" class="stop-btn hidden" type="button">Stop</button>
+                    <button id="send-btn" class="send-btn" type="button" aria-label="Send message">➤</button>
+                </div>
+            </div>
+        </footer>
+    </main>
+</section>
 <script type="module" src="/static/chat/app.js"></script>
 {% endblock %}

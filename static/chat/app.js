@@ -6,13 +6,20 @@ const state = {
   activeRequestId: null,
   autoScroll: true,
   lastFailedContent: "",
+  sidebarOpen: false,
+  typingMessageId: null,
 };
 
 const elements = {
   app: document.getElementById("chat-app"),
+  sidebar: document.getElementById("chat-sidebar"),
+  sidebarOverlay: document.getElementById("sidebar-overlay"),
+  openSidebarBtn: document.getElementById("open-sidebar-btn"),
+  closeSidebarBtn: document.getElementById("close-sidebar-btn"),
   conversationList: document.getElementById("conversation-list"),
   messageList: document.getElementById("message-list"),
   threadEmpty: document.getElementById("thread-empty"),
+  threadTitle: document.getElementById("thread-title"),
   newChatBtn: document.getElementById("new-chat-btn"),
   sendBtn: document.getElementById("send-btn"),
   stopBtn: document.getElementById("stop-btn"),
@@ -36,7 +43,7 @@ function getCsrfToken() {
 }
 
 async function apiFetch(url, options = {}) {
-  const response = await fetch(url, {
+  return fetch(url, {
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
@@ -45,27 +52,33 @@ async function apiFetch(url, options = {}) {
     },
     ...options,
   });
-  return response;
-}
-
-function formatRelativeTime(isoTime) {
-  const then = new Date(isoTime).getTime();
-  const now = Date.now();
-  const diffMinutes = Math.max(1, Math.floor((now - then) / 60000));
-  if (diffMinutes < 60) return `${diffMinutes}m`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d`;
 }
 
 function escapeHtml(text) {
-  return text
+  return String(text || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function formatClockTime(isoTime) {
+  if (!isoTime) return "";
+  const date = new Date(isoTime);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function formatRelativeTime(isoTime) {
+  if (!isoTime) return "";
+  const then = new Date(isoTime).getTime();
+  const now = Date.now();
+  const minutes = Math.max(1, Math.floor((now - then) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 function renderInlineMarkdown(text) {
@@ -74,7 +87,10 @@ function renderInlineMarkdown(text) {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    )
     .replace(/\n/g, "<br>");
 }
 
@@ -87,19 +103,11 @@ function renderMarkdown(text) {
     if (match.index > cursor) {
       blocks.push({ type: "text", value: text.slice(cursor, match.index) });
     }
-    blocks.push({
-      type: "code",
-      language: match[1] || "",
-      value: match[2] || "",
-    });
+    blocks.push({ type: "code", value: match[2] || "" });
     cursor = pattern.lastIndex;
   }
-  if (cursor < text.length) {
-    blocks.push({ type: "text", value: text.slice(cursor) });
-  }
-  if (!blocks.length) {
-    blocks.push({ type: "text", value: text });
-  }
+  if (cursor < text.length) blocks.push({ type: "text", value: text.slice(cursor) });
+  if (!blocks.length) blocks.push({ type: "text", value: text });
 
   return blocks
     .map((block) => {
@@ -120,10 +128,20 @@ function getActiveConversation() {
   return state.conversations.find((item) => item.id === state.activeConversationId) || null;
 }
 
+function setSidebarOpen(open) {
+  state.sidebarOpen = open;
+  elements.sidebar.classList.toggle("open", open);
+  elements.sidebarOverlay.classList.toggle("hidden", !open);
+}
+
+function updateThreadTitle() {
+  const active = getActiveConversation();
+  elements.threadTitle.textContent = active?.title || "New chat";
+}
+
 function setStreaming(isStreaming) {
   state.streaming = isStreaming;
   elements.sendBtn.disabled = isStreaming;
-  elements.input.disabled = isStreaming;
   elements.stopBtn.classList.toggle("hidden", !isStreaming);
 }
 
@@ -140,9 +158,7 @@ function scrollToBottom(force = false) {
 
 function onMessageScroll() {
   state.autoScroll = nearBottom();
-  if (state.autoScroll) {
-    elements.jumpLatestBtn.classList.add("hidden");
-  }
+  elements.jumpLatestBtn.classList.toggle("hidden", state.autoScroll);
 }
 
 function addInlineError(text, retryable = false) {
@@ -150,6 +166,7 @@ function addInlineError(text, retryable = false) {
     id: `error-${Date.now()}`,
     role: "system",
     content: text,
+    createdAt: new Date().toISOString(),
     isError: true,
     retryable,
   });
@@ -159,7 +176,7 @@ function addInlineError(text, retryable = false) {
 function renderConversations() {
   const activeId = state.activeConversationId;
   if (!state.conversations.length) {
-    elements.conversationList.innerHTML = `<div class="muted">No chats yet</div>`;
+    elements.conversationList.innerHTML = `<div class="muted">No conversations yet</div>`;
     return;
   }
   elements.conversationList.innerHTML = state.conversations
@@ -171,69 +188,86 @@ function renderConversations() {
             <div class="conversation-title">${escapeHtml(conversation.title)}</div>
             <div class="conversation-time">${formatRelativeTime(conversation.updatedAt)}</div>
           </button>
-          <button class="conversation-more" type="button" data-id="${conversation.id}" title="Rename">Rename</button>
-          <button class="conversation-delete" type="button" data-id="${conversation.id}" title="Delete">Delete</button>
+          <button class="conversation-more" type="button" data-id="${conversation.id}" title="Rename">✎</button>
+          <button class="conversation-delete" type="button" data-id="${conversation.id}" title="Delete">🗑</button>
         </div>
       `;
     })
     .join("");
 }
 
+function renderTypingIndicator() {
+  return `
+    <div class="typing-indicator" aria-label="Typing">
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+    </div>
+  `;
+}
+
 function renderMessages() {
   elements.threadEmpty.classList.toggle("hidden", state.messages.length > 0);
   elements.messageList.innerHTML = state.messages
     .map((message) => {
-      const isAssistant = message.role === "assistant";
-      const isUser = message.role === "user";
-      const isSystem = message.role === "system";
       const classes = [
         "message-item",
-        isAssistant ? "assistant" : "",
-        isUser ? "user" : "",
-        isSystem ? "system" : "",
+        message.role,
         message.isError ? "error" : "",
       ]
         .filter(Boolean)
         .join(" ");
 
-      const body = isAssistant ? renderMarkdown(message.content) : `<div class="markdown-block">${escapeHtml(message.content || "")}</div>`;
-      const cursor = message.streaming ? '<span class="stream-cursor"></span>' : "";
+      const isAssistant = message.role === "assistant";
+      const isTyping = Boolean(message.typing);
+      const body = isTyping
+        ? renderTypingIndicator()
+        : isAssistant
+          ? renderMarkdown(message.content || "")
+          : `<div class="markdown-block">${escapeHtml(message.content || "")}</div>`;
+
+      const copyButton = message.content
+        ? `<button class="message-copy" type="button" data-copy="${encodeURIComponent(message.content)}">Copy</button>`
+        : "";
+
       const retry = message.retryable ? '<button class="retry-btn" type="button">Retry</button>' : "";
-      return `<div class="${classes}" data-id="${message.id || ""}">${body}${cursor}${retry}</div>`;
+      return `
+        <article class="${classes}" data-id="${message.id || ""}">
+          ${copyButton}
+          ${body}
+          <div class="message-meta">${formatClockTime(message.createdAt)}</div>
+          ${retry}
+        </article>
+      `;
     })
     .join("");
 
-  if (!state.autoScroll) {
-    elements.jumpLatestBtn.classList.remove("hidden");
-  }
+  elements.jumpLatestBtn.classList.toggle("hidden", state.autoScroll);
   scrollToBottom();
 }
 
 function autosizeTextarea() {
   const node = elements.input;
   node.style.height = "auto";
-  node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
+  node.style.height = `${Math.min(node.scrollHeight, 180)}px`;
 }
 
 async function listConversations() {
   const response = await apiFetch(API.conversations);
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to load conversations");
-  }
+  if (!response.ok) throw new Error(data.error || "Failed to load conversations");
   state.conversations = data.items || [];
   if (!state.activeConversationId && state.conversations.length) {
     state.activeConversationId = state.conversations[0].id;
   }
   renderConversations();
+  updateThreadTitle();
 }
 
 async function loadMessages(conversationId) {
   const response = await apiFetch(`${API.conversations}/${conversationId}/messages`);
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to load messages");
-  }
+  if (!response.ok) throw new Error(data.error || "Failed to load messages");
   state.messages = data.items || [];
   renderMessages();
   scrollToBottom(true);
@@ -245,14 +279,13 @@ async function createConversation() {
     body: JSON.stringify({ title: "New chat" }),
   });
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to create conversation");
-  }
+  if (!response.ok) throw new Error(data.error || "Failed to create conversation");
   state.conversations.unshift(data);
   state.activeConversationId = data.id;
   state.messages = [];
   renderConversations();
   renderMessages();
+  updateThreadTitle();
 }
 
 async function renameConversation(conversationId) {
@@ -260,24 +293,21 @@ async function renameConversation(conversationId) {
   if (!current) return;
   const nextTitle = window.prompt("Rename chat", current.title);
   if (!nextTitle || !nextTitle.trim()) return;
+
   const response = await apiFetch(`${API.conversations}/${conversationId}`, {
     method: "PATCH",
     body: JSON.stringify({ title: nextTitle.trim() }),
   });
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to rename conversation");
-  }
+  if (!response.ok) throw new Error(data.error || "Failed to rename");
   state.conversations = state.conversations.map((item) => (item.id === conversationId ? data : item));
   renderConversations();
+  updateThreadTitle();
 }
 
 async function deleteConversation(conversationId) {
-  const ok = window.confirm("Delete this conversation?");
-  if (!ok) return;
-  const response = await apiFetch(`${API.conversations}/${conversationId}`, {
-    method: "DELETE",
-  });
+  if (!window.confirm("Delete this conversation?")) return;
+  const response = await apiFetch(`${API.conversations}/${conversationId}`, { method: "DELETE" });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Failed to delete conversation");
@@ -286,24 +316,51 @@ async function deleteConversation(conversationId) {
   if (state.activeConversationId === conversationId) {
     state.activeConversationId = state.conversations[0]?.id || null;
     state.messages = [];
-    if (state.activeConversationId) {
-      await loadMessages(state.activeConversationId);
-    } else {
-      renderMessages();
-    }
+    if (state.activeConversationId) await loadMessages(state.activeConversationId);
+    else renderMessages();
   }
   renderConversations();
+  updateThreadTitle();
+}
+
+function addTypingPlaceholder() {
+  const id = `typing-${Date.now()}`;
+  state.typingMessageId = id;
+  state.messages.push({
+    id,
+    role: "assistant",
+    content: "",
+    createdAt: new Date().toISOString(),
+    typing: true,
+  });
+}
+
+function replaceTypingWithAssistant(messageId, initialChunk = "") {
+  const idx = state.messages.findIndex((item) => item.id === state.typingMessageId);
+  if (idx >= 0) {
+    state.messages[idx] = {
+      id: messageId,
+      role: "assistant",
+      content: initialChunk,
+      createdAt: new Date().toISOString(),
+      streaming: true,
+    };
+  } else {
+    state.messages.push({
+      id: messageId,
+      role: "assistant",
+      content: initialChunk,
+      createdAt: new Date().toISOString(),
+      streaming: true,
+    });
+  }
+  state.typingMessageId = null;
 }
 
 function upsertStreamingAssistant(messageId, chunk) {
   const index = state.messages.findIndex((item) => item.id === messageId);
   if (index === -1) {
-    state.messages.push({
-      id: messageId,
-      role: "assistant",
-      content: chunk,
-      streaming: true,
-    });
+    replaceTypingWithAssistant(messageId, chunk);
   } else {
     state.messages[index].content += chunk;
     state.messages[index].streaming = true;
@@ -314,11 +371,17 @@ function upsertStreamingAssistant(messageId, chunk) {
 function finishStreamingAssistant(messageId, fullText) {
   const index = state.messages.findIndex((item) => item.id === messageId);
   if (index === -1) {
-    state.messages.push({ id: messageId, role: "assistant", content: fullText || "", streaming: false });
+    state.messages.push({
+      id: messageId,
+      role: "assistant",
+      content: fullText || "",
+      createdAt: new Date().toISOString(),
+    });
   } else {
     state.messages[index].content = fullText ?? state.messages[index].content;
     state.messages[index].streaming = false;
   }
+  state.typingMessageId = null;
   renderMessages();
 }
 
@@ -343,8 +406,8 @@ function parseSseChunk(buffer, onEvent) {
     }
     try {
       onEvent(eventName, data ? JSON.parse(data) : {});
-    } catch (err) {
-      console.error("Failed parsing event payload", err);
+    } catch (error) {
+      console.error("SSE parse error", error);
     }
   }
   return parts[parts.length - 1] || "";
@@ -360,7 +423,9 @@ async function sendMessage() {
     id: `user-${Date.now()}`,
     role: "user",
     content,
+    createdAt: new Date().toISOString(),
   });
+  addTypingPlaceholder();
   elements.input.value = "";
   autosizeTextarea();
   state.autoScroll = true;
@@ -381,6 +446,8 @@ async function sendMessage() {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let pending = "";
+    let sawDelta = false;
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -390,6 +457,10 @@ async function sendMessage() {
           state.activeRequestId = data.requestId;
           assistantMessageId = data.messageId || assistantMessageId;
         } else if (eventName === "delta") {
+          if (!sawDelta) {
+            replaceTypingWithAssistant(assistantMessageId, "");
+            sawDelta = true;
+          }
           upsertStreamingAssistant(assistantMessageId, data.text || "");
         } else if (eventName === "done") {
           finishStreamingAssistant(assistantMessageId, data.fullText || "");
@@ -413,6 +484,7 @@ function bindEvents() {
   elements.newChatBtn.addEventListener("click", async () => {
     try {
       await createConversation();
+      if (window.innerWidth <= 960) setSidebarOpen(false);
     } catch (error) {
       addInlineError(error.message || "Failed to create conversation");
     }
@@ -425,20 +497,36 @@ function bindEvents() {
     scrollToBottom(true);
   });
 
+  elements.openSidebarBtn?.addEventListener("click", () => setSidebarOpen(true));
+  elements.closeSidebarBtn?.addEventListener("click", () => setSidebarOpen(false));
+  elements.sidebarOverlay?.addEventListener("click", () => setSidebarOpen(false));
+
   elements.messageList.addEventListener("scroll", onMessageScroll);
   elements.messageList.addEventListener("click", async (event) => {
-    const copyBtn = event.target.closest(".copy-code-btn");
-    if (copyBtn) {
-      const value = decodeURIComponent(copyBtn.dataset.code || "");
+    const copyCodeBtn = event.target.closest(".copy-code-btn");
+    if (copyCodeBtn) {
+      const value = decodeURIComponent(copyCodeBtn.dataset.code || "");
       await navigator.clipboard.writeText(value);
-      copyBtn.textContent = "Copied";
-      window.setTimeout(() => {
-        copyBtn.textContent = "Copy";
+      copyCodeBtn.textContent = "Copied";
+      setTimeout(() => {
+        copyCodeBtn.textContent = "Copy";
       }, 1000);
       return;
     }
-    const retry = event.target.closest(".retry-btn");
-    if (retry) {
+
+    const copyMessageBtn = event.target.closest(".message-copy");
+    if (copyMessageBtn) {
+      const value = decodeURIComponent(copyMessageBtn.dataset.copy || "");
+      await navigator.clipboard.writeText(value);
+      copyMessageBtn.textContent = "Copied";
+      setTimeout(() => {
+        copyMessageBtn.textContent = "Copy";
+      }, 1000);
+      return;
+    }
+
+    const retryBtn = event.target.closest(".retry-btn");
+    if (retryBtn) {
       elements.input.value = state.lastFailedContent;
       autosizeTextarea();
       await sendMessage();
@@ -450,13 +538,16 @@ function bindEvents() {
     if (openBtn) {
       state.activeConversationId = openBtn.dataset.id;
       renderConversations();
+      updateThreadTitle();
       try {
         await loadMessages(state.activeConversationId);
+        if (window.innerWidth <= 960) setSidebarOpen(false);
       } catch (error) {
         addInlineError(error.message || "Failed to load conversation");
       }
       return;
     }
+
     const renameBtn = event.target.closest(".conversation-more");
     if (renameBtn) {
       try {
@@ -466,6 +557,7 @@ function bindEvents() {
       }
       return;
     }
+
     const deleteBtn = event.target.closest(".conversation-delete");
     if (deleteBtn) {
       try {
@@ -483,18 +575,20 @@ function bindEvents() {
       await sendMessage();
     }
   });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 960) setSidebarOpen(false);
+  });
 }
 
 async function bootstrap() {
   bindEvents();
   autosizeTextarea();
+
   try {
     await listConversations();
-    if (!state.activeConversationId) {
-      await createConversation();
-    } else {
-      await loadMessages(state.activeConversationId);
-    }
+    if (!state.activeConversationId) await createConversation();
+    else await loadMessages(state.activeConversationId);
   } catch (error) {
     addInlineError(error.message || "Failed to load chat");
   }
