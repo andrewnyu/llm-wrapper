@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from urllib.parse import parse_qs, unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -28,6 +29,39 @@ def _load_dotenv_file(dotenv_path: Path) -> None:
 
 
 _load_dotenv_file(BASE_DIR / ".env")
+
+
+def _database_config_from_url(database_url: str) -> dict:
+    parsed = urlparse(database_url)
+    scheme = parsed.scheme.lower()
+
+    if scheme in {"postgres", "postgresql"}:
+        config = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": unquote(parsed.path.lstrip("/")),
+            "USER": unquote(parsed.username or ""),
+            "PASSWORD": unquote(parsed.password or ""),
+            "HOST": parsed.hostname or "localhost",
+            "PORT": str(parsed.port or 5432),
+        }
+        options = {}
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if "sslmode" in query and query["sslmode"]:
+            options["sslmode"] = query["sslmode"][-1]
+        if options:
+            config["OPTIONS"] = options
+        return config
+
+    if scheme == "sqlite":
+        db_name = unquote(parsed.path or "")
+        if db_name.startswith("/"):
+            db_name = db_name[1:]
+        return {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / db_name if db_name else BASE_DIR / "db.sqlite3",
+        }
+
+    raise ValueError(f"Unsupported DATABASE_URL scheme: {parsed.scheme}")
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
@@ -78,12 +112,16 @@ TEMPLATES = [
 WSGI_APPLICATION = "api_key_wrapper.wsgi.application"
 ASGI_APPLICATION = "api_key_wrapper.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+database_url = os.environ.get("DATABASE_URL", "").strip()
+if database_url:
+    DATABASES = {"default": _database_config_from_url(database_url)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
 
 AUTH_PASSWORD_VALIDATORS = [
     {
