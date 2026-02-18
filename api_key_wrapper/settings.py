@@ -3,6 +3,32 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _load_dotenv_file(dotenv_path: Path) -> None:
+    if not dotenv_path.exists():
+        return
+    for raw_line in dotenv_path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv_file(BASE_DIR / ".env")
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h] or ["127.0.0.1", "localhost"]
