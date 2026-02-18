@@ -20,16 +20,8 @@
 
 body {
     background: var(--chat-bg);
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Avenir Next", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     color: var(--text-main);
-}
-
-.layout {
-    display: block;
-}
-
-.layout > .sidebar {
-    display: none;
 }
 
 .content {
@@ -173,6 +165,8 @@ body {
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: var(--space-3);
 }
 
@@ -186,6 +180,33 @@ body {
     margin: 2px 0 0;
     color: var(--text-muted);
     font-size: 0.82rem;
+}
+
+.app-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.app-tab {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: transparent;
+    transition: background 0.18s ease, color 0.18s ease;
+}
+
+.app-tab:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-main);
+}
+
+.app-tab.active {
+    color: var(--primary);
+    background: rgba(0, 132, 255, 0.12);
 }
 
 .thread-stage {
@@ -509,6 +530,12 @@ body {
 
     .messenger-main {
         min-height: calc(100vh - 36px);
+    }
+
+    .app-tabs {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 2px;
     }
 
     .message-list {
