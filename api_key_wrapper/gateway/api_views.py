@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from api_key_wrapper.chat.models import Conversation, Message
 from api_key_wrapper.imaging.models import ImageJob
 
-from .models import ProviderKey
+from .key_resolver import get_api_key_for_provider
 from .providers.registry import get_provider_client
 
 
@@ -34,14 +34,14 @@ def chat_complete(request):
         return _json_error("provider, model, and messages are required")
 
     try:
-        key = ProviderKey.objects.filter(user=request.user, provider=provider).latest("created_at")
-    except ProviderKey.DoesNotExist:
-        return _json_error("Missing API key for provider. Add one on the API Keys page.", status=403)
+        api_key = get_api_key_for_provider(provider)
+    except ValueError as exc:
+        return _json_error(str(exc), status=403)
 
     try:
         client = get_provider_client(provider)
         result = client.chat_complete(
-            key.api_key,
+            api_key,
             {
                 "model": model,
                 "messages": messages,
@@ -113,14 +113,14 @@ def image_generate(request):
         return _json_error("prompt is required")
 
     try:
-        key = ProviderKey.objects.filter(user=request.user, provider=provider).latest("created_at")
-    except ProviderKey.DoesNotExist:
-        return _json_error("Missing API key for Nano Banana. Add one on the API Keys page.", status=403)
+        api_key = get_api_key_for_provider(provider)
+    except ValueError as exc:
+        return _json_error(str(exc), status=403)
 
     try:
         client = get_provider_client(provider)
         result = client.image_generate(
-            key.api_key,
+            api_key,
             {
                 "prompt": prompt,
                 "size": size,

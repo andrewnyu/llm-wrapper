@@ -1,10 +1,10 @@
+import os
 from unittest.mock import patch
 
 from django.test import TestCase
 
 from api_key_wrapper.accounts.models import User
 from api_key_wrapper.chat.models import Conversation, Message
-from api_key_wrapper.gateway.models import ProviderKey
 
 
 class ChatApiTests(TestCase):
@@ -15,12 +15,6 @@ class ChatApiTests(TestCase):
             password="TestPass123!",
         )
         self.client.login(username="chatuser", password="TestPass123!")
-        ProviderKey.objects.create(
-            user=self.user,
-            provider=ProviderKey.PROVIDER_OPENAI,
-            name="Default",
-            api_key="test-key",
-        )
 
     def test_conversation_crud(self):
         create_res = self.client.post(
@@ -66,13 +60,14 @@ class ChatApiTests(TestCase):
                 on_token("there")
             return "Hi there"
 
-        with patch("api_key_wrapper.chat.views.generate", side_effect=fake_generate):
-            response = self.client.post(
-                f"/api/conversations/{conversation.id}/messages",
-                data='{"content":"Say hi"}',
-                content_type="application/json",
-            )
-            payload = b"".join(response.streaming_content).decode("utf-8")
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.chat.views.generate", side_effect=fake_generate):
+                response = self.client.post(
+                    f"/api/conversations/{conversation.id}/messages",
+                    data='{"content":"Say hi"}',
+                    content_type="application/json",
+                )
+                payload = b"".join(response.streaming_content).decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/event-stream")

@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Callable, Optional
 
+from api_key_wrapper.gateway.key_resolver import get_api_key_for_provider
 from api_key_wrapper.gateway.models import ProviderKey
 from api_key_wrapper.gateway.providers.registry import get_provider_client
 
@@ -35,17 +36,11 @@ def generate(
     Contract:
     generate(messages, stream=False, on_token=None, **params) -> full_text
     """
-    key = (
-        ProviderKey.objects.filter(user=user, provider=provider)
-        .order_by("-created_at")
-        .first()
-    )
-    if not key:
-        raise ValueError(f"Missing API key for provider '{provider}'")
+    api_key = get_api_key_for_provider(provider)
 
     client = get_provider_client(provider)
     result = client.chat_complete(
-        key.api_key,
+        api_key,
         {
             "model": model,
             "messages": messages,

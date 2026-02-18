@@ -1,34 +1,32 @@
 {% extends "base.html" %}
 {% block title %}API Keys · API Key Wrapper{% endblock %}
 {% block content %}
-<h1>API Keys</h1>
-<p class="muted">Store API keys per provider. Keys are stored in plaintext for this MVP.</p>
-<div class="actions">
-    <a class="primary button" href="/keys/add/">Add API Key</a>
-</div>
+<h1>Shared API Keys</h1>
+<p class="muted">Keys are loaded from server environment variables (.env). These are shared across all users and cannot be edited in the UI.</p>
 <table class="table">
     <thead>
         <tr>
             <th>Provider</th>
-            <th>Name</th>
-            <th>Key</th>
-            <th></th>
+            <th>Environment Variable</th>
+            <th>Status</th>
         </tr>
     </thead>
     <tbody>
-        {% for key in keys %}
+        {% for row in status_rows %}
             <tr>
-                <td>{{ key.get_provider_display }}</td>
-                <td>{{ key.name }}</td>
-                <td>{{ key.masked_key }}</td>
+                <td>{{ row.label }}</td>
+                <td><code>{{ row.env_var }}</code></td>
                 <td>
-                    <a class="link" href="/keys/{{ key.id }}/edit/">Edit</a>
-                    <a class="link" href="/keys/{{ key.id }}/delete/">Delete</a>
+                    {% if row.configured %}
+                        <span class="message success">Configured</span>
+                    {% else %}
+                        <span class="message error">Missing</span>
+                    {% endif %}
                 </td>
             </tr>
         {% empty %}
             <tr>
-                <td colspan="4" class="muted">No keys yet.</td>
+                <td colspan="3" class="muted">No providers available.</td>
             </tr>
         {% endfor %}
     </tbody>

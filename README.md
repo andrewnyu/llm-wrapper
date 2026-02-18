@@ -22,6 +22,11 @@ DJANGO_CSRF_TRUSTED_ORIGINS=
 DJANGO_SESSION_COOKIE_SECURE=0
 DJANGO_CSRF_COOKIE_SECURE=0
 API_REQUEST_TIMEOUT_SECONDS=20
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GOOGLE_API_KEY=
+NANO_BANANA_API_KEY=
+CUSTOM_API_KEY=
 ```
 
 3. Run migrations and create a superuser:
@@ -44,12 +49,10 @@ python manage.py runserver
 2. Go to **Account** and click **Enable 2FA**.
 3. Scan the QR code in Google Authenticator, then enter the code to confirm.
 
-## Add API Keys
+## Shared API Keys
 
-1. Go to **API Keys**.
-2. Click **Add API Key** and enter the provider and key.
-
-Keys are stored in plaintext for this MVP. Replace this with encrypted storage before production.
+API keys are loaded from `.env` and shared by all users.
+The **API Keys** page is read-only and shows which provider env vars are configured.
 
 ## Nano Banana integration
 
