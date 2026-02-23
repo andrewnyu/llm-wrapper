@@ -23,3 +23,6 @@ class ProviderClient:
 
     def image_generate(self, api_key: str, payload: Dict[str, Any]) -> ImageGenerationResult:
         raise NotImplementedError
+
+    def image_edit(self, api_key: str, payload: Dict[str, Any]) -> ImageGenerationResult:
+        raise NotImplementedError

@@ -62,5 +62,5 @@ Replace the placeholder endpoint URL and response parsing with the real API deta
 ## Notes
 
 - All pages require login.
-- Image generation is synchronous for now (no background jobs).
+- Image generation/editing is synchronous for now (no background jobs).
 - Add rate limiting (e.g., django-ratelimit) before exposing the API publicly.

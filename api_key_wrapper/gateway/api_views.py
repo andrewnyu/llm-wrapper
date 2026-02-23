@@ -140,7 +140,69 @@ def image_generate(request):
         prompt=prompt,
         provider=provider,
         status="success",
-        result_urls=[image.get("url") for image in result.images if image.get("url")],
+        result_urls=[
+            image.get("url") or image.get("base64")
+            for image in result.images
+            if image.get("url") or image.get("base64")
+        ],
+    )
+
+    return JsonResponse({"images": result.images, "job_id": job.id})
+
+
+@login_required
+def image_edit(request):
+    if request.method != "POST":
+        return _json_error("Only POST allowed", status=405)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json_error("Invalid JSON")
+
+    prompt = payload.get("prompt")
+    input_image = payload.get("input_image")
+    provider = "nano_banana"
+
+    if not prompt:
+        return _json_error("prompt is required")
+    if not input_image:
+        return _json_error("input_image is required")
+
+    try:
+        api_key = get_api_key_for_provider(provider)
+    except ValueError as exc:
+        return _json_error(str(exc), status=403)
+
+    try:
+        client = get_provider_client(provider)
+        result = client.image_edit(
+            api_key,
+            {
+                "prompt": prompt,
+                "input_image": input_image,
+            },
+        )
+    except NotImplementedError as exc:
+        return _json_error(str(exc), status=501)
+    except ValueError as exc:
+        return _json_error(str(exc), status=400)
+    except Exception as exc:
+        message = "Provider request failed"
+        if settings.DEBUG:
+            return _json_error(f"{message}: {exc}", status=502)
+        return _json_error(message, status=502)
+
+    job = ImageJob.objects.create(
+        user=request.user,
+        prompt=prompt,
+        provider=provider,
+        status="success",
+        result_urls=[
+            image.get("url") or image.get("base64")
+            for image in result.images
+            if image.get("url") or image.get("base64")
+        ],
     )
 
     return JsonResponse({"images": result.images, "job_id": job.id})

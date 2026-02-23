@@ -8,7 +8,7 @@
     <header class="image-header">
         <div>
             <h1>Image Studio</h1>
-            <p class="muted">Describe your image and generate with Nano Banana.</p>
+            <p class="muted">Generate images or select/upload one and describe your edit.</p>
         </div>
         <nav class="app-tabs" aria-label="App sections">
             <a class="app-tab" href="/chat/">Chat</a>
@@ -23,7 +23,7 @@
             {% for job in jobs %}
                 {% for url in job.result_urls %}
                     <figure class="image-card">
-                        <img src="{{ url }}" alt="Generated image" />
+                        <img src="{{ url }}" alt="Generated image" class="editable-image" />
                     </figure>
                 {% endfor %}
             {% empty %}
@@ -33,6 +33,12 @@
     </section>
 
     <footer class="image-composer-wrap">
+        <div class="image-toolbar">
+            <button id="pick-source" class="text-btn" type="button">Upload source image</button>
+            <button id="clear-source" class="text-btn hidden" type="button">Clear source</button>
+            <span id="source-status" class="source-status">Mode: Generate</span>
+            <input id="source-upload" type="file" accept="image/*" class="hidden" />
+        </div>
         <div class="image-composer">
             <textarea id="image-prompt" rows="1" placeholder="Describe your image..." maxlength="2000"></textarea>
             <button id="generate" class="generate-btn" type="button" aria-label="Generate image">✦</button>

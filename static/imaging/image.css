@@ -98,11 +98,17 @@ body {
     animation: img-in 0.24s ease both;
 }
 
+.image-card.selected {
+    outline: 3px solid rgba(0, 132, 255, 0.75);
+    outline-offset: 1px;
+}
+
 .image-card img {
     display: block;
     width: 100%;
     aspect-ratio: 1 / 1;
     object-fit: cover;
+    cursor: pointer;
 }
 
 .image-empty {
@@ -117,6 +123,34 @@ body {
     position: sticky;
     bottom: 0;
     padding: 2px 2px 0;
+}
+
+.image-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 10px 8px;
+    flex-wrap: wrap;
+}
+
+.text-btn {
+    border: none;
+    background: rgba(0, 132, 255, 0.12);
+    color: var(--img-primary);
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.text-btn:hover {
+    background: rgba(0, 132, 255, 0.2);
+}
+
+.source-status {
+    color: var(--img-muted);
+    font-size: 0.8rem;
 }
 
 .image-composer {
