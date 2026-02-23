@@ -40,11 +40,25 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-4. Start the server:
+4. Start the server in production mode (background):
 
 ```
-python manage.py runserver
+bash start_server.sh start
 ```
+
+Useful process commands:
+
+```
+bash start_server.sh status
+bash start_server.sh stop
+bash start_server.sh restart
+```
+
+Production requirements:
+- Set `DJANGO_DEBUG=0`
+- Set a strong `DJANGO_SECRET_KEY`
+- Set `DJANGO_ALLOWED_HOSTS` (comma-separated)
+- Install Gunicorn in your venv (`pip install gunicorn`)
 
 ## Enable 2FA
 
