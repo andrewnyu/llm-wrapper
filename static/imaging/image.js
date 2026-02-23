@@ -42,6 +42,10 @@ function ensureNotEmpty() {
   }
 }
 
+function scrollToLatestImage() {
+  imageGrid.scrollTop = imageGrid.scrollHeight;
+}
+
 function addImage(urlOrBase64) {
   ensureNotEmpty();
   const card = document.createElement("figure");
@@ -52,7 +56,8 @@ function addImage(urlOrBase64) {
   img.alt = "Generated image";
   img.className = "editable-image";
   card.appendChild(img);
-  imageGrid.prepend(card);
+  imageGrid.appendChild(card);
+  scrollToLatestImage();
 }
 
 function clearSelectedCard() {
@@ -168,3 +173,4 @@ promptInput.addEventListener("keydown", async (event) => {
 });
 
 autosizeInput();
+scrollToLatestImage();

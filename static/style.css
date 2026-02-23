@@ -29,8 +29,18 @@ body {
 }
 
 .brand {
-    font-weight: 600;
-    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.brand-logo {
+    width: 132px;
+    max-width: 100%;
+    display: block;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
 }
 
 .nav {
@@ -261,6 +271,23 @@ button.danger,
     box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
     width: 100%;
     max-width: 420px;
+    text-align: center;
+}
+
+.auth-logo {
+    width: 180px;
+    max-width: 100%;
+    margin: 0 auto 14px;
+    display: block;
+}
+
+.auth-card form {
+    text-align: left;
+}
+
+.auth-card button.primary {
+    width: 100%;
+    margin-top: 14px;
 }
 
 .qr {
