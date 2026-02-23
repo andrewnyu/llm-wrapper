@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create account · API Key Wrapper</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}" />
+</head>
+<body>
+    <div class="auth-layout">
+        <div class="auth-card">
+            <img src="{% static 'branding/logo-colored.png' %}" alt="VCY GPT" class="auth-logo" />
+            <h1>Create your account</h1>
+            <p class="muted">Anyone on your team can sign up and start with 10 credits.</p>
+            {% if messages %}
+                <div class="messages">
+                    {% for message in messages %}
+                        <div class="message {{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <form method="post">
+                {% csrf_token %}
+                <label>Username</label>
+                {{ form.username }}
+                <label>Email</label>
+                {{ form.email }}
+                <label>Password</label>
+                {{ form.password1 }}
+                <label>Confirm password</label>
+                {{ form.password2 }}
+                {% if form.errors %}
+                    <div class="messages">
+                        {% for field in form %}
+                            {% for error in field.errors %}
+                                <div class="message error">{{ error }}</div>
+                            {% endfor %}
+                        {% endfor %}
+                        {% for error in form.non_field_errors %}
+                            <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <button type="submit" class="primary">Create account</button>
+            </form>
+            <p class="muted">Already have an account? <a class="link" href="/account/login/">Sign in</a></p>
+        </div>
+    </div>
+</body>
+</html>
