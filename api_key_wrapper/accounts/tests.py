@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import TwoFactorDevice, User
+from api_key_wrapper.usage.models import UsageWallet
 
 
 class AuthFlowTests(TestCase):
@@ -53,3 +54,71 @@ class AuthFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"], "Two-factor authentication is required.")
+
+    def test_account_password_change(self):
+        secret = pyotp.random_base32()
+        TwoFactorDevice.objects.create(user=self.user, secret=secret, confirmed=True)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("accounts:account"),
+            {
+                "old_password": self.password,
+                "new_password1": "NewPass123!!",
+                "new_password2": "NewPass123!!",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("accounts:account"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("NewPass123!!"))
+
+    def test_admin_user_add_defaults_initial_load_to_ten(self):
+        admin_user = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password="AdminPass123!",
+        )
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("admin:accounts_user_add"),
+            {
+                "username": "newuser",
+                "email": "newuser@example.com",
+                "password1": "StrongPass123!",
+                "password2": "StrongPass123!",
+                "initial_load": "",
+                "_save": "Save",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        created = User.objects.get(username="newuser")
+        wallet = UsageWallet.objects.get(user=created)
+        self.assertEqual(str(wallet.balance_credits), "10.0000")
+
+    def test_admin_user_add_respects_custom_initial_load(self):
+        admin_user = User.objects.create_superuser(
+            username="admin2",
+            email="admin2@example.com",
+            password="AdminPass123!",
+        )
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("admin:accounts_user_add"),
+            {
+                "username": "customload",
+                "email": "customload@example.com",
+                "password1": "StrongPass123!",
+                "password2": "StrongPass123!",
+                "initial_load": "25.5000",
+                "_save": "Save",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        created = User.objects.get(username="customload")
+        wallet = UsageWallet.objects.get(user=created)
+        self.assertEqual(str(wallet.balance_credits), "25.5000")

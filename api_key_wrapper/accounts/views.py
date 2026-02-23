@@ -1,9 +1,12 @@
 from django.contrib import messages
 from django.contrib.auth import login, logout
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 
-from .forms import LoginForm, TotpVerifyForm
+from api_key_wrapper.usage.services import get_or_create_wallet
+
+from .forms import AccountPasswordChangeForm, LoginForm, TotpVerifyForm
 from .models import TwoFactorDevice, User
 from .utils import build_totp_uri, generate_totp_secret, qr_code_data_uri, verify_totp
 
@@ -44,7 +47,26 @@ def logout_view(request):
 def account_home(request):
     device = getattr(request.user, "two_factor_device", None)
     is_enabled = bool(device and device.confirmed)
-    return render(request, "accounts/account.html", {"is_enabled": is_enabled})
+    wallet = get_or_create_wallet(request.user)
+    password_form = AccountPasswordChangeForm(request.user, request.POST or None)
+
+    if request.method == "POST":
+        if password_form.is_valid():
+            updated_user = password_form.save()
+            update_session_auth_hash(request, updated_user)
+            messages.success(request, "Password updated.")
+            return redirect("accounts:account")
+        messages.error(request, "Please correct the password form errors.")
+
+    return render(
+        request,
+        "accounts/account.html",
+        {
+            "is_enabled": is_enabled,
+            "available_credits": wallet.balance_credits,
+            "password_form": password_form,
+        },
+    )
 
 
 @login_required
