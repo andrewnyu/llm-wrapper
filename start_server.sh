@@ -40,21 +40,32 @@ fi
 source "${VENV_DIR}/bin/activate"
 cd "${PROJECT_DIR}"
 
+load_env_file() {
+  local env_file="${PROJECT_DIR}/.env"
+  if [[ -f "${env_file}" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${env_file}"
+    set +a
+  fi
+}
+
 is_running() {
   [[ -f "${PID_FILE}" ]] && kill -0 "$(cat "${PID_FILE}")" >/dev/null 2>&1
 }
 
 require_production_env() {
   local debug="${DJANGO_DEBUG:-}"
-  local secret="${DJANGO_SECRET_KEY:-}"
   local hosts="${DJANGO_ALLOWED_HOSTS:-}"
+  local hosts_compact="${hosts//,/}"
+  hosts_compact="${hosts_compact//[[:space:]]/}"
 
   if [[ "${debug}" == "1" ]]; then
     echo "Refusing to start: DJANGO_DEBUG must be 0 in production."
     exit 1
   fi
 
-  if [[ -z "${hosts}" ]]; then
+  if [[ -z "${hosts_compact}" ]]; then
     echo "Refusing to start: DJANGO_ALLOWED_HOSTS must be set."
     exit 1
   fi
@@ -73,6 +84,7 @@ start_server() {
     exit 1
   fi
 
+  load_env_file
   require_production_env
   mkdir -p "${RUN_DIR}" "${LOG_DIR}"
 
