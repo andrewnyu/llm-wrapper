@@ -35,12 +35,11 @@ body {
 }
 
 .brand-logo {
-    width: 132px;
+    width: 86px;
     max-width: 100%;
     display: block;
-    border-radius: 8px;
-    background: #f8fafc;
-    padding: 8px;
+    border-radius: 6px;
+    opacity: 0.92;
 }
 
 .nav {
@@ -275,10 +274,12 @@ button.danger,
 }
 
 .auth-logo {
-    width: 180px;
+    width: 110px;
     max-width: 100%;
-    margin: 0 auto 14px;
+    margin: 0 auto 8px;
     display: block;
+    border-radius: 6px;
+    opacity: 0.95;
 }
 
 .auth-card form {
