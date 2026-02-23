@@ -59,6 +59,7 @@ Production requirements:
 - Set a strong `DJANGO_SECRET_KEY`
 - Set `DJANGO_ALLOWED_HOSTS` (comma-separated)
 - Install Gunicorn in your venv (`pip install gunicorn`)
+- Static files are collected to `staticfiles/` and served by Django fallback routing if no reverse proxy static alias is configured.
 
 ## Enable 2FA
 

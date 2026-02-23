@@ -1,5 +1,8 @@
 from django.contrib import admin
+from django.conf import settings
+from django.urls import re_path
 from django.urls import path, include
+from django.views.static import serve
 from django.views.generic import RedirectView
 
 urlpatterns = [
@@ -12,3 +15,10 @@ urlpatterns = [
     path("api/", include("api_key_wrapper.chat.api_urls")),
     path("api/", include("api_key_wrapper.gateway.api_urls")),
 ]
+
+# Fallback static serving for non-debug deployments that run Gunicorn
+# directly without a reverse proxy static alias.
+if not settings.DEBUG:
+    urlpatterns += [
+        re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
+    ]
