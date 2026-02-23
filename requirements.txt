@@ -1,0 +1,15 @@
+# Core web framework
+django>=5,<6
+
+# Auth / 2FA
+pyotp
+qrcode
+pillow
+
+# HTTP clients / provider integrations
+requests
+google-genai
+
+# Database + app server
+psycopg2-binary
+gunicorn
