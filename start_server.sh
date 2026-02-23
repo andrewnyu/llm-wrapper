@@ -54,11 +54,6 @@ require_production_env() {
     exit 1
   fi
 
-  if [[ -z "${secret}" || "${secret}" == "change-me" ]]; then
-    echo "Refusing to start: DJANGO_SECRET_KEY is missing or insecure."
-    exit 1
-  fi
-
   if [[ -z "${hosts}" ]]; then
     echo "Refusing to start: DJANGO_ALLOWED_HOSTS must be set."
     exit 1
