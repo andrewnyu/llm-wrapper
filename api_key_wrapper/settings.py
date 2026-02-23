@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "api_key_wrapper.gateway",
     "api_key_wrapper.chat",
     "api_key_wrapper.imaging",
+    "api_key_wrapper.usage",
 ]
 
 MIDDLEWARE = [
@@ -159,4 +160,8 @@ SESSION_COOKIE_SECURE = os.environ.get("DJANGO_SESSION_COOKIE_SECURE", "0") == "
 CSRF_COOKIE_SECURE = os.environ.get("DJANGO_CSRF_COOKIE_SECURE", "0") == "1"
 
 API_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("API_REQUEST_TIMEOUT_SECONDS", "20"))
+
+USAGE_IMAGE_REQUEST_CREDITS = os.environ.get("USAGE_IMAGE_REQUEST_CREDITS", "1.0")
+USAGE_TEXT_CREDITS_PER_1K_TOKENS = os.environ.get("USAGE_TEXT_CREDITS_PER_1K_TOKENS", "0.25")
+USAGE_ESTIMATED_CHARS_PER_TOKEN = int(os.environ.get("USAGE_ESTIMATED_CHARS_PER_TOKEN", "4"))
 

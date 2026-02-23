@@ -10,8 +10,15 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_http_methods
 
-from .llm import DEFAULT_MODEL, generate
+from .llm import DEFAULT_MODEL, DEFAULT_PROVIDER, generate
 from .models import Conversation, Message
+from api_key_wrapper.usage.services import (
+    InsufficientCreditsError,
+    charge_text_tokens,
+    credits_for_text_tokens,
+    estimate_tokens_from_text,
+    get_or_create_wallet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +32,17 @@ _ACTIVE_LOCK = threading.Lock()
 
 def _json_error(message, status=400):
     return JsonResponse({"error": message}, status=status)
+
+
+def _json_insufficient(required_credits, remaining_credits):
+    return JsonResponse(
+        {
+            "error": "Insufficient credits",
+            "required_credits": str(required_credits),
+            "remaining_credits": str(remaining_credits),
+        },
+        status=402,
+    )
 
 
 def _parse_json(request):
@@ -153,6 +171,10 @@ def conversation_messages_view(request, conversation_id):
         return _json_error(f"content exceeds max length ({MAX_MESSAGE_CHARS})")
     if not _check_rate_limit(request):
         return _json_error("rate limit exceeded, try again shortly", status=429)
+    wallet = get_or_create_wallet(request.user)
+    min_required = credits_for_text_tokens(1)
+    if wallet.balance_credits < min_required:
+        return _json_insufficient(min_required, wallet.balance_credits)
 
     Message.objects.create(
         conversation=conversation,
@@ -212,11 +234,48 @@ def conversation_messages_view(request, conversation_id):
                 yield _sse("delta", {"text": chunk})
 
             final_text = replay_text if stop_event.is_set() else assistant_text
+            input_text = "\n".join(item.get("content", "") for item in history)
+            wallet_obj = None
+            token_count = None
+            charged_credits = None
+            try:
+                wallet_obj, _usage_event, charged_credits = charge_text_tokens(
+                    user=request.user,
+                    feature="chat_stream",
+                    token_count=None,
+                    input_text=input_text,
+                    output_text=final_text,
+                    reference_id=str(conversation.id),
+                    metadata={"provider": DEFAULT_PROVIDER, "model": DEFAULT_MODEL, "source": "chat_stream"},
+                )
+                token_count = _usage_event.unit_count
+            except InsufficientCreditsError:
+                fresh_wallet = get_or_create_wallet(request.user)
+                required_tokens = estimate_tokens_from_text(input_text, final_text)
+                required = credits_for_text_tokens(required_tokens)
+                yield _sse(
+                    "error",
+                    {
+                        "message": "Insufficient credits",
+                        "requiredCredits": str(required),
+                        "remainingCredits": str(fresh_wallet.balance_credits),
+                    },
+                )
+                return
+
             assistant_message.content = final_text
-            assistant_message.save(update_fields=["content"])
+            assistant_message.token_count = token_count
+            assistant_message.save(update_fields=["content", "token_count"])
             conversation.save(update_fields=["updated_at"])
 
-            yield _sse("done", {"fullText": final_text})
+            yield _sse(
+                "done",
+                {
+                    "fullText": final_text,
+                    "usageCharged": str(charged_credits),
+                    "remainingCredits": str(wallet_obj.balance_credits),
+                },
+            )
         except Exception:
             logger.exception("Chat generation failed")
             assistant_message.content = assistant_text

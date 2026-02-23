@@ -1,10 +1,12 @@
 import os
 from unittest.mock import patch
+from decimal import Decimal
 
 from django.test import TestCase
 
 from api_key_wrapper.accounts.models import TwoFactorDevice, User
 from api_key_wrapper.chat.models import Conversation, Message
+from api_key_wrapper.usage.models import UsageWallet
 
 
 class ChatApiTests(TestCase):
@@ -15,6 +17,10 @@ class ChatApiTests(TestCase):
             password="TestPass123!",
         )
         TwoFactorDevice.objects.create(user=self.user, secret="JBSWY3DPEHPK3PXP", confirmed=True)
+        UsageWallet.objects.update_or_create(
+            user=self.user,
+            defaults={"balance_credits": Decimal("100.0000")},
+        )
         self.client.login(username="chatuser", password="TestPass123!")
 
     def test_conversation_crud(self):
@@ -75,6 +81,22 @@ class ChatApiTests(TestCase):
         self.assertIn("event: meta", payload)
         self.assertIn("event: delta", payload)
         self.assertIn("event: done", payload)
+        self.assertIn('"usageCharged"', payload)
+        self.assertIn('"remainingCredits"', payload)
 
         assistant = Message.objects.filter(conversation=conversation, role="assistant").latest("created_at")
         self.assertEqual(assistant.content, "Hi there")
+
+    def test_streaming_rejects_when_insufficient_credits(self):
+        conversation = Conversation.objects.create(user=self.user, title="LowCredits")
+        wallet = UsageWallet.objects.get(user=self.user)
+        wallet.balance_credits = Decimal("0.0000")
+        wallet.save(update_fields=["balance_credits", "updated_at"])
+
+        response = self.client.post(
+            f"/api/conversations/{conversation.id}/messages",
+            data='{"content":"Say hi"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(response.json()["error"], "Insufficient credits")

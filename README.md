@@ -22,6 +22,9 @@ DJANGO_CSRF_TRUSTED_ORIGINS=
 DJANGO_SESSION_COOKIE_SECURE=0
 DJANGO_CSRF_COOKIE_SECURE=0
 API_REQUEST_TIMEOUT_SECONDS=20
+USAGE_IMAGE_REQUEST_CREDITS=1.0
+USAGE_TEXT_CREDITS_PER_1K_TOKENS=0.25
+USAGE_ESTIMATED_CHARS_PER_TOKEN=4
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 GOOGLE_API_KEY=
@@ -63,4 +66,6 @@ Replace the placeholder endpoint URL and response parsing with the real API deta
 
 - All pages require login.
 - Image generation/editing is synchronous for now (no background jobs).
+- Usage billing uses credits for image and text requests.
+- Only admins can view usage ledger/wallet and add load credits via Django admin.
 - Add rate limiting (e.g., django-ratelimit) before exposing the API publicly.
