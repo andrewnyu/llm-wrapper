@@ -46,27 +46,94 @@ function scrollToLatestImage() {
   imageThread.scrollTop = imageThread.scrollHeight;
 }
 
-function addUserBubble(prompt) {
+function formatNow() {
+  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function buildMessageMeta() {
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  meta.textContent = formatNow();
+  return meta;
+}
+
+function addUserBubble(prompt, sourceImage = null) {
   ensureNotEmpty();
   const message = document.createElement("div");
   message.className = "image-message user";
 
   const bubble = document.createElement("div");
   bubble.className = "message-bubble user";
-  bubble.textContent = prompt;
+
+  const role = document.createElement("div");
+  role.className = "message-role";
+  role.textContent = "You";
+  bubble.appendChild(role);
+
+  const text = document.createElement("p");
+  text.className = "message-text user-text";
+  text.textContent = prompt;
+  bubble.appendChild(text);
+
+  if (sourceImage) {
+    const sourceWrap = document.createElement("div");
+    sourceWrap.className = "message-source-wrap";
+
+    const sourceLabel = document.createElement("span");
+    sourceLabel.className = "source-chip";
+    sourceLabel.textContent = "Source image";
+
+    const sourcePreview = document.createElement("img");
+    sourcePreview.className = "message-source-thumb";
+    sourcePreview.src = sourceImage;
+    sourcePreview.alt = "Source image preview";
+
+    sourceWrap.appendChild(sourceLabel);
+    sourceWrap.appendChild(sourcePreview);
+    bubble.appendChild(sourceWrap);
+  }
+
+  bubble.appendChild(buildMessageMeta());
 
   message.appendChild(bubble);
   imageThread.appendChild(message);
   scrollToLatestImage();
 }
 
-function addAssistantBubble({ text = "", images = [] } = {}) {
+function addAssistantBubble({ text = "", images = [], pending = false } = {}) {
   ensureNotEmpty();
   const message = document.createElement("div");
   message.className = "image-message assistant";
 
   const bubble = document.createElement("div");
   bubble.className = "message-bubble assistant";
+
+  const head = document.createElement("div");
+  head.className = "assistant-head";
+
+  const role = document.createElement("span");
+  role.className = "message-role";
+  role.textContent = "Nano Banana";
+  head.appendChild(role);
+
+  const model = document.createElement("span");
+  model.className = "model-chip";
+  model.textContent = "Gemini 2.5 Flash Image";
+  head.appendChild(model);
+
+  bubble.appendChild(head);
+
+  if (pending) {
+    const typing = document.createElement("div");
+    typing.className = "typing-indicator";
+    typing.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+    bubble.appendChild(typing);
+    bubble.appendChild(buildMessageMeta());
+    message.appendChild(bubble);
+    imageThread.appendChild(message);
+    scrollToLatestImage();
+    return message;
+  }
 
   const trimmed = typeof text === "string" ? text.trim() : "";
   if (trimmed) {
@@ -95,7 +162,22 @@ function addAssistantBubble({ text = "", images = [] } = {}) {
     bubble.appendChild(fallback);
   }
 
+  bubble.appendChild(buildMessageMeta());
   message.appendChild(bubble);
+  imageThread.appendChild(message);
+  scrollToLatestImage();
+  return message;
+}
+
+function addErrorBubble(messageText) {
+  const message = document.createElement("div");
+  message.className = "image-message assistant";
+
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble assistant error";
+  bubble.textContent = messageText;
+  message.appendChild(bubble);
+
   imageThread.appendChild(message);
   scrollToLatestImage();
 }
@@ -154,7 +236,9 @@ async function runImageRequest() {
 
   generateButton.disabled = true;
   const isEdit = Boolean(selectedSourceImage);
-  addUserBubble(prompt);
+  const requestSource = isEdit ? selectedSourceImage : null;
+  addUserBubble(prompt, requestSource);
+  const pendingBubble = addAssistantBubble({ pending: true });
   setStatus(isEdit ? "Editing image..." : "Generating image...");
   try {
     const response = await fetch(isEdit ? "/api/image/edit" : "/api/image/generate", {
@@ -170,13 +254,17 @@ async function runImageRequest() {
     });
     const data = await parseApiResponse(response);
     if (!response.ok) {
-      setStatus(formatRequestError(response, data));
+      const errorMessage = formatRequestError(response, data);
+      pendingBubble.remove();
+      addErrorBubble(errorMessage);
+      setStatus(errorMessage);
       return;
     }
 
     const images = (data.images || [])
       .map((image) => image.url || image.base64)
       .filter(Boolean);
+    pendingBubble.remove();
     addAssistantBubble({ text: data.text || "", images });
 
     promptInput.value = "";
@@ -191,6 +279,8 @@ async function runImageRequest() {
     setSelectedSource(null);
     window.setTimeout(() => setStatus(""), 1400);
   } catch (_error) {
+    pendingBubble.remove();
+    addErrorBubble("Network error. Please retry.");
     setStatus("Network error. Please retry.");
   } finally {
     generateButton.disabled = false;

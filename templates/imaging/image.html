@@ -13,6 +13,7 @@
         <nav class="app-tabs" aria-label="App sections">
             <a class="app-tab" href="/chat/">Chat</a>
             <a class="app-tab active" href="/image/">Image</a>
+            <a class="app-tab" href="/image/feedback/">Image Feedback</a>
             <a class="app-tab" href="/keys/">API Keys</a>
             <a class="app-tab" href="/account/">Settings</a>
         </nav>
@@ -22,10 +23,18 @@
         <div id="image-thread" class="image-thread">
             {% for job in jobs %}
                 <div class="image-message user">
-                    <div class="message-bubble user">{{ job.prompt|linebreaksbr }}</div>
+                    <div class="message-bubble user">
+                        <div class="message-role">You</div>
+                        <p class="message-text user-text">{{ job.prompt|linebreaksbr }}</p>
+                        <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
+                    </div>
                 </div>
                 <div class="image-message assistant">
                     <div class="message-bubble assistant">
+                        <div class="assistant-head">
+                            <span class="message-role">Nano Banana</span>
+                            <span class="model-chip">Gemini 2.5 Flash Image</span>
+                        </div>
                         {% if job.result_text %}
                             <p class="message-text">{{ job.result_text|linebreaksbr }}</p>
                         {% endif %}
@@ -34,6 +43,10 @@
                                 <img src="{{ url }}" alt="Generated image" class="editable-image" />
                             </figure>
                         {% endfor %}
+                        {% if not job.result_text and not job.result_urls %}
+                            <p class="message-text">No content returned.</p>
+                        {% endif %}
+                        <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
                     </div>
                 </div>
             {% empty %}
