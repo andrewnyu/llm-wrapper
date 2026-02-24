@@ -6,4 +6,5 @@ app_name = "imaging"
 
 urlpatterns = [
     path("", views.image_view, name="image"),
+    path("feedback/", views.image_feedback_view, name="feedback"),
 ]
