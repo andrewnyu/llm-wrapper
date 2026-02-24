@@ -12,6 +12,7 @@ class ChatCompletionResult:
 @dataclass
 class ImageGenerationResult:
     images: List[Dict[str, str]]
+    text: str = ""
     raw: Optional[Dict[str, Any]] = None
 
 

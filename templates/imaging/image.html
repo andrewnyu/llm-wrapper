@@ -19,13 +19,23 @@
     </header>
 
     <section class="image-feed">
-        <div id="image-grid" class="image-grid-pro">
+        <div id="image-thread" class="image-thread">
             {% for job in jobs %}
-                {% for url in job.result_urls %}
-                    <figure class="image-card">
-                        <img src="{{ url }}" alt="Generated image" class="editable-image" />
-                    </figure>
-                {% endfor %}
+                <div class="image-message user">
+                    <div class="message-bubble user">{{ job.prompt|linebreaksbr }}</div>
+                </div>
+                <div class="image-message assistant">
+                    <div class="message-bubble assistant">
+                        {% if job.result_text %}
+                            <p class="message-text">{{ job.result_text|linebreaksbr }}</p>
+                        {% endif %}
+                        {% for url in job.result_urls %}
+                            <figure class="image-card">
+                                <img src="{{ url }}" alt="Generated image" class="editable-image" />
+                            </figure>
+                        {% endfor %}
+                    </div>
+                </div>
             {% empty %}
                 <div id="image-empty" class="image-empty">No images yet. Describe something to create your first image.</div>
             {% endfor %}

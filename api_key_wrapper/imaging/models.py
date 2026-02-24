@@ -13,6 +13,7 @@ class ImageJob(models.Model):
     prompt = models.TextField()
     provider = models.CharField(max_length=32, default="nano_banana")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    result_text = models.TextField(blank=True, default="")
     result_urls = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

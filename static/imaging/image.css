@@ -80,7 +80,7 @@ body {
     min-height: 0;
 }
 
-.image-grid-pro {
+.image-thread {
     height: 100%;
     overflow-y: auto;
     display: flex;
@@ -89,15 +89,65 @@ body {
     padding-right: 8px;
 }
 
+.image-message {
+    display: flex;
+    width: 100%;
+}
+
+.image-message.user {
+    justify-content: flex-end;
+}
+
+.image-message.assistant {
+    justify-content: flex-start;
+}
+
+.message-bubble {
+    border-radius: 16px;
+    box-shadow: var(--img-shadow-soft);
+    animation: img-in 0.24s ease both;
+}
+
+.message-bubble.user {
+    max-width: min(760px, 72%);
+    background: var(--img-grad);
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+    padding: 10px 12px;
+    font-size: 0.93rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.message-bubble.assistant {
+    max-width: min(920px, 96%);
+    background: #f8fafc;
+    border: 1px solid #dbe7f5;
+    border-bottom-left-radius: 4px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.message-text {
+    margin: 0;
+    color: var(--img-text);
+    font-size: 0.92rem;
+    line-height: 1.42;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .image-card {
     margin: 0;
     border-radius: 14px;
     overflow: hidden;
     box-shadow: var(--img-shadow-soft);
     background: #eef2f7;
-    animation: img-in 0.24s ease both;
-    width: min(900px, 100%);
-    align-self: center;
+    width: min(880px, 100%);
+    align-self: flex-start;
 }
 
 .image-card.selected {
@@ -239,9 +289,17 @@ body {
         padding: 12px;
     }
 
-    .image-grid-pro {
+    .image-thread {
         gap: 10px;
         padding-right: 0;
+    }
+
+    .message-bubble.user {
+        max-width: 90%;
+    }
+
+    .message-bubble.assistant {
+        max-width: 100%;
     }
 
     .app-tabs {

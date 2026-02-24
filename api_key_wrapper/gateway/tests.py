@@ -94,6 +94,7 @@ class ImageApiTests(TestCase):
 
         mock_result = ImageGenerationResult(
             images=[{"base64": "data:image/png;base64,AAA"}],
+            text="Description ready.",
         )
         with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "test-key"}, clear=False):
             with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
@@ -106,6 +107,7 @@ class ImageApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["images"]), 1)
+        self.assertEqual(response.json()["text"], "Description ready.")
         self.assertEqual(response.json()["usage_charged"], "1.0000")
         self.assertIn("remaining_credits", response.json())
 

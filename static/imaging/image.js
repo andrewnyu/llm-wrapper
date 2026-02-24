@@ -1,7 +1,7 @@
 const app = document.getElementById("image-app");
 const promptInput = document.getElementById("image-prompt");
 const generateButton = document.getElementById("generate");
-const imageGrid = document.getElementById("image-grid");
+const imageThread = document.getElementById("image-thread");
 const imageStatus = document.getElementById("image-status");
 const emptyState = document.getElementById("image-empty");
 const pickSourceButton = document.getElementById("pick-source");
@@ -43,20 +43,60 @@ function ensureNotEmpty() {
 }
 
 function scrollToLatestImage() {
-  imageGrid.scrollTop = imageGrid.scrollHeight;
+  imageThread.scrollTop = imageThread.scrollHeight;
 }
 
-function addImage(urlOrBase64) {
+function addUserBubble(prompt) {
   ensureNotEmpty();
-  const card = document.createElement("figure");
-  card.className = "image-card";
+  const message = document.createElement("div");
+  message.className = "image-message user";
 
-  const img = document.createElement("img");
-  img.src = urlOrBase64;
-  img.alt = "Generated image";
-  img.className = "editable-image";
-  card.appendChild(img);
-  imageGrid.appendChild(card);
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble user";
+  bubble.textContent = prompt;
+
+  message.appendChild(bubble);
+  imageThread.appendChild(message);
+  scrollToLatestImage();
+}
+
+function addAssistantBubble({ text = "", images = [] } = {}) {
+  ensureNotEmpty();
+  const message = document.createElement("div");
+  message.className = "image-message assistant";
+
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble assistant";
+
+  const trimmed = typeof text === "string" ? text.trim() : "";
+  if (trimmed) {
+    const textNode = document.createElement("p");
+    textNode.className = "message-text";
+    textNode.textContent = trimmed;
+    bubble.appendChild(textNode);
+  }
+
+  images.forEach((imageSrc) => {
+    const card = document.createElement("figure");
+    card.className = "image-card";
+
+    const img = document.createElement("img");
+    img.src = imageSrc;
+    img.alt = "Generated image";
+    img.className = "editable-image";
+    card.appendChild(img);
+    bubble.appendChild(card);
+  });
+
+  if (!trimmed && images.length === 0) {
+    const fallback = document.createElement("p");
+    fallback.className = "message-text";
+    fallback.textContent = "No content returned.";
+    bubble.appendChild(fallback);
+  }
+
+  message.appendChild(bubble);
+  imageThread.appendChild(message);
   scrollToLatestImage();
 }
 
@@ -80,12 +120,41 @@ function setSelectedSource(src, sourceType = "selected") {
   }
 }
 
+async function parseApiResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      return await response.json();
+    } catch (_error) {
+      return {};
+    }
+  }
+  try {
+    const raw = await response.text();
+    return { error: raw || "" };
+  } catch (_error) {
+    return {};
+  }
+}
+
+function formatRequestError(response, data) {
+  const serverError = typeof data?.error === "string" ? data.error : "";
+  if (response.status === 413 || /RequestDataTooBig/i.test(serverError)) {
+    return "Upload too large. Please use a smaller image.";
+  }
+  if (serverError) {
+    return serverError.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+  return `Request failed (${response.status})`;
+}
+
 async function runImageRequest() {
   const prompt = promptInput.value.trim();
   if (!prompt || generateButton.disabled) return;
 
   generateButton.disabled = true;
   const isEdit = Boolean(selectedSourceImage);
+  addUserBubble(prompt);
   setStatus(isEdit ? "Editing image..." : "Generating image...");
   try {
     const response = await fetch(isEdit ? "/api/image/edit" : "/api/image/generate", {
@@ -99,23 +168,30 @@ async function runImageRequest() {
       ),
       credentials: "same-origin",
     });
-    const data = await response.json();
+    const data = await parseApiResponse(response);
     if (!response.ok) {
-      setStatus(data.error || "Request failed");
+      setStatus(formatRequestError(response, data));
       return;
     }
 
-    (data.images || []).forEach((image) => {
-      if (image.url) addImage(image.url);
-      else if (image.base64) addImage(image.base64);
-    });
+    const images = (data.images || [])
+      .map((image) => image.url || image.base64)
+      .filter(Boolean);
+    addAssistantBubble({ text: data.text || "", images });
+
     promptInput.value = "";
     autosizeInput();
-    setStatus(isEdit ? "Image edited." : "Image generated.");
+    setStatus(
+      data.text
+        ? "Response ready."
+        : isEdit
+          ? "Image edited."
+          : "Image generated.",
+    );
     setSelectedSource(null);
     window.setTimeout(() => setStatus(""), 1400);
   } catch (_error) {
-    setStatus("Network error");
+    setStatus("Network error. Please retry.");
   } finally {
     generateButton.disabled = false;
   }
@@ -148,7 +224,7 @@ sourceUpload.addEventListener("change", () => {
   sourceUpload.value = "";
 });
 
-imageGrid.addEventListener("click", (event) => {
+imageThread.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLImageElement)) return;
   if (!target.classList.contains("editable-image")) return;

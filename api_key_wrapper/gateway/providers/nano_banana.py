@@ -30,7 +30,11 @@ class NanoBananaClient(ProviderClient):
                 model=model,
                 contents=[prompt],
             )
-            return ImageGenerationResult(images=self._extract_images(response), raw=response)
+            return ImageGenerationResult(
+                images=self._extract_images(response),
+                text=self._extract_text(response),
+                raw=response,
+            )
         except Exception as e:
             raise Exception(f"Nano Banana Generation Error: {e}")
 
@@ -65,7 +69,11 @@ class NanoBananaClient(ProviderClient):
                     }
                 ],
             )
-            return ImageGenerationResult(images=self._extract_images(response), raw=response)
+            return ImageGenerationResult(
+                images=self._extract_images(response),
+                text=self._extract_text(response),
+                raw=response,
+            )
         except Exception as e:
             raise Exception(f"Nano Banana Edit Error: {e}")
 
@@ -118,3 +126,23 @@ class NanoBananaClient(ProviderClient):
                     encoded = base64.b64encode(data).decode("ascii")
                 images.append({"base64": f"data:{mime_type};base64,{encoded}"})
         return images
+
+    def _extract_text(self, response):
+        chunks = []
+        candidates = getattr(response, "candidates", []) or []
+        for candidate in candidates:
+            content = getattr(candidate, "content", None)
+            parts = getattr(content, "parts", []) or []
+            for part in parts:
+                text = getattr(part, "text", None)
+                if isinstance(text, str):
+                    stripped = text.strip()
+                    if stripped:
+                        chunks.append(stripped)
+        if chunks:
+            return "\n\n".join(chunks)
+
+        response_text = getattr(response, "text", None)
+        if isinstance(response_text, str):
+            return response_text.strip()
+        return ""

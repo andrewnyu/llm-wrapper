@@ -105,14 +105,16 @@ def chat_complete(request):
     usage_tokens = extract_token_usage(result.usage)
     input_text = "\n".join(str(m.get("content", "")) for m in messages if isinstance(m, dict))
     output_text = result.text or ""
+    token_count_for_charge = usage_tokens
     if usage_tokens is None:
         usage_tokens = estimate_tokens_from_text(input_text, output_text)
+        token_count_for_charge = None
 
     try:
         wallet, _usage_event, charged_credits = charge_text_tokens(
             user=request.user,
             feature="chat_complete",
-            token_count=usage_tokens,
+            token_count=token_count_for_charge,
             input_text=input_text,
             output_text=output_text,
             reference_id=str(session.id),
@@ -194,11 +196,13 @@ def image_generate(request):
             return _json_error(f"{message}: {exc}", status=502)
         return _json_error(message, status=502)
 
+    result_text = (result.text or "").strip()
     job = ImageJob.objects.create(
         user=request.user,
         prompt=prompt,
         provider=provider,
         status="success",
+        result_text=result_text,
         result_urls=[
             image.get("url") or image.get("base64")
             for image in result.images
@@ -209,6 +213,7 @@ def image_generate(request):
     return JsonResponse(
         {
             "images": result.images,
+            "text": result_text,
             "job_id": job.id,
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
@@ -269,11 +274,13 @@ def image_edit(request):
             return _json_error(f"{message}: {exc}", status=502)
         return _json_error(message, status=502)
 
+    result_text = (result.text or "").strip()
     job = ImageJob.objects.create(
         user=request.user,
         prompt=prompt,
         provider=provider,
         status="success",
+        result_text=result_text,
         result_urls=[
             image.get("url") or image.get("base64")
             for image in result.images
@@ -284,6 +291,7 @@ def image_edit(request):
     return JsonResponse(
         {
             "images": result.images,
+            "text": result_text,
             "job_id": job.id,
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
