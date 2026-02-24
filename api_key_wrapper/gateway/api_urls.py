@@ -6,4 +6,5 @@ urlpatterns = [
     path("chat/complete", api_views.chat_complete, name="chat_complete"),
     path("image/generate", api_views.image_generate, name="image_generate"),
     path("image/edit", api_views.image_edit, name="image_edit"),
+    path("image/feedback", api_views.image_feedback, name="image_feedback"),
 ]

@@ -1,6 +1,7 @@
 import json
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
+from django.core.exceptions import RequestDataTooBig
 from django.http import JsonResponse
 
 from api_key_wrapper.chat.models import Conversation, Message
@@ -18,6 +19,13 @@ from api_key_wrapper.usage.services import (
 from .key_resolver import get_api_key_for_provider
 from .providers.registry import get_provider_client
 
+DEFAULT_IMAGE_FEEDBACK_PROMPT = (
+    "Analyze this image and respond in 3 sections: "
+    "(1) Brief description. "
+    "(2) Spelling/text issues you can read, with suggested corrections. "
+    "(3) Practical feedback and improvements."
+)
+
 
 def _json_error(message, status=400):
     return JsonResponse({"error": message}, status=status)
@@ -34,15 +42,23 @@ def _json_insufficient(required_credits, remaining_credits):
     )
 
 
+def _parse_json_payload(request):
+    try:
+        return json.loads(request.body.decode("utf-8")), None
+    except RequestDataTooBig:
+        return None, _json_error("Upload too large. Please use a smaller image.", status=413)
+    except json.JSONDecodeError:
+        return None, _json_error("Invalid JSON")
+
+
 @login_required
 def chat_complete(request):
     if request.method != "POST":
         return _json_error("Only POST allowed", status=405)
 
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return _json_error("Invalid JSON")
+    payload, payload_error = _parse_json_payload(request)
+    if payload_error:
+        return payload_error
 
     provider = payload.get("provider")
     model = payload.get("model")
@@ -150,10 +166,9 @@ def image_generate(request):
     if request.method != "POST":
         return _json_error("Only POST allowed", status=405)
 
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return _json_error("Invalid JSON")
+    payload, payload_error = _parse_json_payload(request)
+    if payload_error:
+        return payload_error
 
     prompt = payload.get("prompt")
     size = payload.get("size", "1024x1024")
@@ -201,6 +216,7 @@ def image_generate(request):
         user=request.user,
         prompt=prompt,
         provider=provider,
+        kind=ImageJob.KIND_STUDIO,
         status="success",
         result_text=result_text,
         result_urls=[
@@ -226,10 +242,9 @@ def image_edit(request):
     if request.method != "POST":
         return _json_error("Only POST allowed", status=405)
 
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return _json_error("Invalid JSON")
+    payload, payload_error = _parse_json_payload(request)
+    if payload_error:
+        return payload_error
 
     prompt = payload.get("prompt")
     input_image = payload.get("input_image")
@@ -279,6 +294,85 @@ def image_edit(request):
         user=request.user,
         prompt=prompt,
         provider=provider,
+        kind=ImageJob.KIND_STUDIO,
+        status="success",
+        result_text=result_text,
+        result_urls=[
+            image.get("url") or image.get("base64")
+            for image in result.images
+            if image.get("url") or image.get("base64")
+        ],
+    )
+
+    return JsonResponse(
+        {
+            "images": result.images,
+            "text": result_text,
+            "job_id": job.id,
+            "usage_charged": str(charged_credits),
+            "remaining_credits": str(wallet.balance_credits),
+        }
+    )
+
+
+@login_required
+def image_feedback(request):
+    if request.method != "POST":
+        return _json_error("Only POST allowed", status=405)
+
+    payload, payload_error = _parse_json_payload(request)
+    if payload_error:
+        return payload_error
+
+    prompt = (payload.get("prompt") or "").strip()
+    input_image = payload.get("input_image")
+    provider = "nano_banana"
+
+    if not input_image:
+        return _json_error("input_image is required")
+
+    final_prompt = prompt or DEFAULT_IMAGE_FEEDBACK_PROMPT
+
+    try:
+        wallet, _usage_event, charged_credits = charge_image_request(
+            user=request.user,
+            feature="image_feedback",
+            metadata={"provider": provider, "source": "gateway_api"},
+        )
+    except InsufficientCreditsError:
+        fresh_wallet = get_or_create_wallet(request.user)
+        return _json_insufficient("1.0000", fresh_wallet.balance_credits)
+
+    try:
+        api_key = get_api_key_for_provider(provider)
+    except ValueError as exc:
+        return _json_error(str(exc), status=403)
+
+    try:
+        client = get_provider_client(provider)
+        result = client.image_edit(
+            api_key,
+            {
+                "prompt": final_prompt,
+                "input_image": input_image,
+            },
+        )
+    except NotImplementedError as exc:
+        return _json_error(str(exc), status=501)
+    except ValueError as exc:
+        return _json_error(str(exc), status=400)
+    except Exception as exc:
+        message = "Provider request failed"
+        if settings.DEBUG:
+            return _json_error(f"{message}: {exc}", status=502)
+        return _json_error(message, status=502)
+
+    result_text = (result.text or "").strip()
+    job = ImageJob.objects.create(
+        user=request.user,
+        prompt=prompt or "Image feedback",
+        provider=provider,
+        kind=ImageJob.KIND_FEEDBACK,
         status="success",
         result_text=result_text,
         result_urls=[

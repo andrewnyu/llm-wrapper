@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from api_key_wrapper.accounts.models import TwoFactorDevice, User
+from api_key_wrapper.imaging.models import ImageJob
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult, ImageGenerationResult
 from api_key_wrapper.usage.models import UsageEvent, UsageWallet
 
@@ -136,3 +137,34 @@ class ImageApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 402)
         self.assertEqual(response.json()["error"], "Insufficient credits")
+
+    def test_image_feedback_success_uses_default_prompt_when_missing(self):
+        self.client.login(username="imager", password="TestPass123!")
+
+        mock_result = ImageGenerationResult(images=[], text="Found typo in the headline.")
+        with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
+                mock_client.return_value.image_edit.return_value = mock_result
+                response = self.client.post(
+                    reverse("image_feedback"),
+                    data='{"input_image":"data:image/png;base64,AAA"}',
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["text"], "Found typo in the headline.")
+        called_payload = mock_client.return_value.image_edit.call_args[0][1]
+        self.assertIn("Analyze this image", called_payload["prompt"])
+        job = ImageJob.objects.latest("created_at")
+        self.assertEqual(job.kind, ImageJob.KIND_FEEDBACK)
+
+    def test_image_feedback_requires_input_image(self):
+        self.client.login(username="imager", password="TestPass123!")
+
+        response = self.client.post(
+            reverse("image_feedback"),
+            data='{"prompt":"describe this"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "input_image is required")
