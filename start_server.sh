@@ -116,7 +116,7 @@ stop_server() {
   if ! is_running; then
     echo "Server is not running."
     rm -f "${PID_FILE}"
-    exit 0
+    return 0
   fi
 
   local pid

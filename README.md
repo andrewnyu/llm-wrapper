@@ -95,6 +95,28 @@ Set `NANO_BANANA_API_KEY` in `.env`, then restart the server. Image model IDs an
 
 Public signup is disabled. Existing users can continue signing in. Administrators create users at `/admin/`; the admin form supports an initial credit load.
 
+## Simple CI/CD
+
+`.github/workflows/deploy.yml` runs the tests and deploys every push to `main`.
+
+Add these repository secrets under **GitHub → Settings → Secrets and variables → Actions**:
+
+- `VM_HOST`: VM hostname or IP address
+- `VM_USER`: SSH user
+- `VM_SSH_KEY`: private SSH key used to access the VM
+- `VM_APP_PATH`: checkout path on the VM, such as `/opt/llm-wrapper`
+
+The matching public key must be in the VM user's `~/.ssh/authorized_keys`. The VM checkout must already have its production `.env`, `venv`, and access to pull the repository. After that, a push to `main` automatically runs tests, pulls the new commit on the VM, installs requirements, runs migrations, collects static files, and restarts Gunicorn.
+
+To deploy manually on the VM:
+
+```bash
+cd /opt/llm-wrapper
+git pull --ff-only origin main
+venv/bin/pip install -r requirements.txt
+bash start_server.sh restart
+```
+
 
 ## Notes
 
