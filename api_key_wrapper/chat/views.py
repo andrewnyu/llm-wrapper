@@ -180,8 +180,6 @@ def conversation_messages_view(request, conversation_id):
     model_choice = get_chat_model(provider, model)
     if not model_choice:
         return _json_error("Unsupported provider or model")
-    if not is_provider_configured(provider):
-        return _json_error(f"{model_choice['label']} is not configured on this server", status=403)
     if not content:
         return _json_error("content is required")
     if len(content) > MAX_MESSAGE_CHARS:
@@ -192,6 +190,8 @@ def conversation_messages_view(request, conversation_id):
     min_required = credits_for_text_tokens(1)
     if wallet.balance_credits < min_required:
         return _json_insufficient(min_required, wallet.balance_credits)
+    if not is_provider_configured(provider):
+        return _json_error(f"{model_choice['label']} is not configured on this server", status=403)
 
     Message.objects.create(
         conversation=conversation,
