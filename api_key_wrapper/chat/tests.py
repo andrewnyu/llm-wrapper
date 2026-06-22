@@ -100,3 +100,35 @@ class ChatApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 402)
         self.assertEqual(response.json()["error"], "Insufficient credits")
+
+    def test_streaming_uses_selected_deepseek_model(self):
+        conversation = Conversation.objects.create(user=self.user, title="DeepSeek")
+
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.chat.views.generate", return_value="Deep answer") as mock_generate:
+                response = self.client.post(
+                    f"/api/conversations/{conversation.id}/messages",
+                    data=(
+                        '{"content":"Think about this","provider":"deepseek",'
+                        '"model":"deepseek-v4-flash"}'
+                    ),
+                    content_type="application/json",
+                )
+                payload = b"".join(response.streaming_content).decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"model": "deepseek-v4-flash"', payload)
+        self.assertEqual(mock_generate.call_args.kwargs["provider"], "deepseek")
+        self.assertEqual(mock_generate.call_args.kwargs["model"], "deepseek-v4-flash")
+        assistant = Message.objects.filter(conversation=conversation, role="assistant").latest("created_at")
+        self.assertEqual(assistant.model, "deepseek-v4-flash")
+
+    def test_streaming_rejects_unknown_model(self):
+        conversation = Conversation.objects.create(user=self.user, title="Unknown")
+        response = self.client.post(
+            f"/api/conversations/{conversation.id}/messages",
+            data='{"content":"Hello","provider":"openai","model":"made-up-model"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Unsupported provider or model")

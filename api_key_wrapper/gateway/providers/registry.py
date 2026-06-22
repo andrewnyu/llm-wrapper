@@ -1,5 +1,6 @@
 from .anthropic import AnthropicClient
 from .custom import CustomClient
+from .deepseek import DeepSeekClient
 from .google import GoogleClient
 from .nano_banana import NanoBananaClient
 from .openai import OpenAIClient
@@ -10,6 +11,7 @@ PROVIDER_REGISTRY = {
     "anthropic": AnthropicClient(),
     "google": GoogleClient(),
     "nano_banana": NanoBananaClient(),
+    "deepseek": DeepSeekClient(),
     "custom": CustomClient(),
 }
 

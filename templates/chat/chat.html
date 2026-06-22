@@ -22,7 +22,7 @@
             <button id="open-sidebar-btn" class="icon-btn mobile-only" type="button" aria-label="Open conversations">☰</button>
             <div class="thread-title-wrap">
                 <h2 id="thread-title">New chat</h2>
-                <p class="thread-subtitle">Ask anything</p>
+                <p id="thread-subtitle" class="thread-subtitle">Ask anything</p>
             </div>
             <nav class="app-tabs" aria-label="App sections">
                 <a class="app-tab active" href="/chat/">Chat</a>
@@ -40,6 +40,22 @@
         </div>
 
         <footer class="composer-wrap">
+            <div class="model-switcher-wrap">
+                <label class="sr-only" for="model-switcher">AI model</label>
+                <select id="model-switcher" class="model-switcher" aria-label="AI model">
+                    {% for item in chat_models %}
+                        <option
+                            value="{{ item.provider }}::{{ item.model }}"
+                            data-provider="{{ item.provider }}"
+                            data-model="{{ item.model }}"
+                            data-label="{{ item.label }}"
+                            {% if not item.configured %}disabled{% endif %}
+                            {% if item.provider == default_provider and item.model == default_model %}selected{% endif %}
+                        >{{ item.label }}{% if not item.configured %} · not configured{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <span id="model-hint" class="model-hint">Choose a model for your next message</span>
+            </div>
             <div class="composer">
                 <textarea
                     id="composer-input"

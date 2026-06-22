@@ -7,6 +7,7 @@ class ProviderKey(models.Model):
     PROVIDER_ANTHROPIC = "anthropic"
     PROVIDER_GOOGLE = "google"
     PROVIDER_NANO_BANANA = "nano_banana"
+    PROVIDER_DEEPSEEK = "deepseek"
     PROVIDER_CUSTOM = "custom"
 
     PROVIDER_CHOICES = [
@@ -14,6 +15,7 @@ class ProviderKey(models.Model):
         (PROVIDER_ANTHROPIC, "Anthropic"),
         (PROVIDER_GOOGLE, "Google"),
         (PROVIDER_NANO_BANANA, "Nano Banana"),
+        (PROVIDER_DEEPSEEK, "DeepSeek"),
         (PROVIDER_CUSTOM, "Custom"),
     ]
 

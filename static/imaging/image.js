@@ -8,8 +8,44 @@ const pickSourceButton = document.getElementById("pick-source");
 const clearSourceButton = document.getElementById("clear-source");
 const sourceStatus = document.getElementById("source-status");
 const sourceUpload = document.getElementById("source-upload");
+const sourcePreview = document.getElementById("source-preview");
+const sourcePreviewImage = document.getElementById("source-preview-image");
+const imageComposer = document.getElementById("image-composer");
+const modelSelect = document.getElementById("image-model");
+const aspectRatioSelect = document.getElementById("aspect-ratio");
+const imageSizeSelect = document.getElementById("image-size");
+const imageModels = JSON.parse(document.getElementById("image-models-data")?.textContent || "[]");
 
 let selectedSourceImage = null;
+
+function selectedModelConfig() {
+  return imageModels.find((item) => item.model === modelSelect.value) || imageModels[0] || null;
+}
+
+function fillSelect(select, values, preferred) {
+  select.innerHTML = values.map((value) => `<option value="${value}">${value}</option>`).join("");
+  select.value = values.includes(preferred) ? preferred : values[0] || "";
+}
+
+function refreshImageControls() {
+  const model = selectedModelConfig();
+  if (!model) {
+    generateButton.disabled = true;
+    setStatus("No image model is configured on this server.");
+    return;
+  }
+  fillSelect(
+    aspectRatioSelect,
+    model.aspect_ratios || ["1:1"],
+    localStorage.getItem("image-aspect-ratio") || aspectRatioSelect.value || "1:1",
+  );
+  fillSelect(
+    imageSizeSelect,
+    model.resolutions || ["1K"],
+    localStorage.getItem("image-size") || imageSizeSelect.value || "1K",
+  );
+  localStorage.setItem("image-model", model.model);
+}
 
 function getCsrfToken() {
   const fromData = app?.dataset?.csrfToken;
@@ -100,7 +136,7 @@ function addUserBubble(prompt, sourceImage = null) {
   scrollToLatestImage();
 }
 
-function addAssistantBubble({ text = "", images = [], pending = false } = {}) {
+function addAssistantBubble({ text = "", images = [], pending = false, settings = {} } = {}) {
   ensureNotEmpty();
   const message = document.createElement("div");
   message.className = "image-message assistant";
@@ -113,12 +149,12 @@ function addAssistantBubble({ text = "", images = [], pending = false } = {}) {
 
   const role = document.createElement("span");
   role.className = "message-role";
-  role.textContent = "Nano Banana";
+  role.textContent = settings.model_label || selectedModelConfig()?.label || "Nano Banana";
   head.appendChild(role);
 
   const model = document.createElement("span");
   model.className = "model-chip";
-  model.textContent = "Gemini 2.5 Flash Image";
+  model.textContent = `${settings.aspect_ratio || aspectRatioSelect.value} · ${settings.image_size || imageSizeSelect.value}`;
   head.appendChild(model);
 
   bubble.appendChild(head);
@@ -152,6 +188,15 @@ function addAssistantBubble({ text = "", images = [], pending = false } = {}) {
     img.alt = "Generated image";
     img.className = "editable-image";
     card.appendChild(img);
+
+    const actions = document.createElement("figcaption");
+    actions.className = "image-card-actions";
+    actions.innerHTML = `
+      <button class="image-action edit-image" type="button">Edit this</button>
+      <a class="image-action download-image" download="nano-banana.png">Download</a>
+    `;
+    actions.querySelector(".download-image").href = imageSrc;
+    card.appendChild(actions);
     bubble.appendChild(card);
   });
 
@@ -192,12 +237,14 @@ function setSelectedSource(src, sourceType = "selected") {
   selectedSourceImage = src || null;
   if (selectedSourceImage) {
     generateButton.title = "Edit selected image";
-    sourceStatus.textContent = sourceType === "upload" ? "Mode: Edit (uploaded source)" : "Mode: Edit (selected image)";
-    clearSourceButton.classList.remove("hidden");
+    sourceStatus.textContent = sourceType === "upload" ? "Editing uploaded image" : "Editing selected image";
+    sourcePreviewImage.src = selectedSourceImage;
+    sourcePreview.classList.remove("hidden");
   } else {
     generateButton.title = "Generate image";
-    sourceStatus.textContent = "Mode: Generate";
-    clearSourceButton.classList.add("hidden");
+    sourceStatus.textContent = "Generate mode";
+    sourcePreviewImage.removeAttribute("src");
+    sourcePreview.classList.add("hidden");
     clearSelectedCard();
   }
 }
@@ -237,8 +284,14 @@ async function runImageRequest() {
   generateButton.disabled = true;
   const isEdit = Boolean(selectedSourceImage);
   const requestSource = isEdit ? selectedSourceImage : null;
+  const requestSettings = {
+    model: modelSelect.value,
+    model_label: selectedModelConfig()?.label || modelSelect.value,
+    aspect_ratio: aspectRatioSelect.value,
+    image_size: imageSizeSelect.value,
+  };
   addUserBubble(prompt, requestSource);
-  const pendingBubble = addAssistantBubble({ pending: true });
+  const pendingBubble = addAssistantBubble({ pending: true, settings: requestSettings });
   setStatus(isEdit ? "Editing image..." : "Generating image...");
   try {
     const response = await fetch(isEdit ? "/api/image/edit" : "/api/image/generate", {
@@ -248,7 +301,9 @@ async function runImageRequest() {
         "X-CSRFToken": getCsrfToken(),
       },
       body: JSON.stringify(
-        isEdit ? { prompt, input_image: selectedSourceImage } : { prompt },
+        isEdit
+          ? { prompt, input_image: selectedSourceImage, ...requestSettings }
+          : { prompt, ...requestSettings },
       ),
       credentials: "same-origin",
     });
@@ -265,7 +320,7 @@ async function runImageRequest() {
       .map((image) => image.url || image.base64)
       .filter(Boolean);
     pendingBubble.remove();
-    addAssistantBubble({ text: data.text || "", images });
+    addAssistantBubble({ text: data.text || "", images, settings: data.settings || requestSettings });
 
     promptInput.value = "";
     autosizeInput();
@@ -295,9 +350,12 @@ clearSourceButton.addEventListener("click", () => {
   setSelectedSource(null);
 });
 
-sourceUpload.addEventListener("change", () => {
-  const file = sourceUpload.files && sourceUpload.files[0];
+function loadSourceFile(file) {
   if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    setStatus("Please choose an image file.");
+    return;
+  }
   const reader = new FileReader();
   reader.onload = () => {
     const source = typeof reader.result === "string" ? reader.result : null;
@@ -311,10 +369,27 @@ sourceUpload.addEventListener("change", () => {
   };
   reader.onerror = () => setStatus("Could not read selected image");
   reader.readAsDataURL(file);
+}
+
+sourceUpload.addEventListener("change", () => {
+  const file = sourceUpload.files && sourceUpload.files[0];
+  loadSourceFile(file);
   sourceUpload.value = "";
 });
 
 imageThread.addEventListener("click", (event) => {
+  const editButton = event.target.closest(".edit-image");
+  if (editButton) {
+    const image = editButton.closest(".image-card")?.querySelector(".editable-image");
+    if (image) {
+      clearSelectedCard();
+      image.closest(".image-card")?.classList.add("selected");
+      setSelectedSource(image.src, "selected");
+      promptInput.focus();
+    }
+    return;
+  }
+  if (event.target.closest(".download-image")) return;
   const target = event.target;
   if (!(target instanceof HTMLImageElement)) return;
   if (!target.classList.contains("editable-image")) return;
@@ -330,6 +405,12 @@ imageThread.addEventListener("click", (event) => {
 });
 
 generateButton.addEventListener("click", runImageRequest);
+modelSelect.addEventListener("change", () => {
+  refreshImageControls();
+  localStorage.setItem("image-model", modelSelect.value);
+});
+aspectRatioSelect.addEventListener("change", () => localStorage.setItem("image-aspect-ratio", aspectRatioSelect.value));
+imageSizeSelect.addEventListener("change", () => localStorage.setItem("image-size", imageSizeSelect.value));
 promptInput.addEventListener("input", autosizeInput);
 promptInput.addEventListener("keydown", async (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
@@ -338,5 +419,40 @@ promptInput.addEventListener("keydown", async (event) => {
   }
 });
 
+document.querySelectorAll("[data-prompt]").forEach((button) => {
+  button.addEventListener("click", () => {
+    promptInput.value = button.dataset.prompt || "";
+    autosizeInput();
+    promptInput.focus();
+  });
+});
+
+document.addEventListener("paste", (event) => {
+  const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
+  if (imageItem) loadSourceFile(imageItem.getAsFile());
+});
+
+document.addEventListener("dragover", (event) => {
+  if (Array.from(event.dataTransfer?.items || []).some((item) => item.type.startsWith("image/"))) {
+    event.preventDefault();
+    imageComposer.classList.add("drag-active");
+  }
+});
+
+document.addEventListener("dragleave", (event) => {
+  if (!event.relatedTarget) imageComposer.classList.remove("drag-active");
+});
+
+document.addEventListener("drop", (event) => {
+  const file = Array.from(event.dataTransfer?.files || []).find((item) => item.type.startsWith("image/"));
+  if (!file) return;
+  event.preventDefault();
+  imageComposer.classList.remove("drag-active");
+  loadSourceFile(file);
+});
+
+const savedModel = localStorage.getItem("image-model");
+if (savedModel && imageModels.some((item) => item.model === savedModel)) modelSelect.value = savedModel;
+refreshImageControls();
 autosizeInput();
 scrollToLatestImage();

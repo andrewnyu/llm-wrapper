@@ -17,6 +17,13 @@ from api_key_wrapper.usage.services import (
 )
 
 from .key_resolver import get_api_key_for_provider
+from .model_catalog import (
+    DEFAULT_IMAGE_ASPECT_RATIO,
+    DEFAULT_IMAGE_MODEL,
+    DEFAULT_IMAGE_RESOLUTION,
+    get_chat_model,
+    get_image_model,
+)
 from .providers.registry import get_provider_client
 
 DEFAULT_IMAGE_FEEDBACK_PROMPT = (
@@ -25,6 +32,29 @@ DEFAULT_IMAGE_FEEDBACK_PROMPT = (
     "(2) Spelling/text issues you can read, with suggested corrections. "
     "(3) Practical feedback and improvements."
 )
+
+
+def _image_options(payload):
+    model_id = (payload.get("model") or DEFAULT_IMAGE_MODEL).strip()
+    model = get_image_model(model_id)
+    if not model:
+        return None, _json_error("Unsupported image model")
+
+    aspect_ratio = (payload.get("aspect_ratio") or DEFAULT_IMAGE_ASPECT_RATIO).strip()
+    if aspect_ratio not in model["aspect_ratios"]:
+        return None, _json_error("Unsupported aspect ratio for this image model")
+
+    image_size = (payload.get("image_size") or DEFAULT_IMAGE_RESOLUTION).strip().upper()
+    if image_size not in model["resolutions"]:
+        return None, _json_error("Unsupported resolution for this image model")
+
+    return {
+        "provider": model["provider"],
+        "model": model_id,
+        "model_label": model["label"],
+        "aspect_ratio": aspect_ratio,
+        "image_size": image_size,
+    }, None
 
 
 def _json_error(message, status=400):
@@ -68,6 +98,8 @@ def chat_complete(request):
 
     if not provider or not model or not messages:
         return _json_error("provider, model, and messages are required")
+    if not get_chat_model(provider, model):
+        return _json_error("Unsupported provider or model")
 
     wallet = get_or_create_wallet(request.user)
     min_required = credits_for_text_tokens(1)
@@ -171,18 +203,18 @@ def image_generate(request):
         return payload_error
 
     prompt = payload.get("prompt")
-    size = payload.get("size", "1024x1024")
-    n = payload.get("n", 1)
-    provider = "nano_banana"
-
     if not prompt:
         return _json_error("prompt is required")
+    options, options_error = _image_options(payload)
+    if options_error:
+        return options_error
+    provider = options["provider"]
 
     try:
         wallet, _usage_event, charged_credits = charge_image_request(
             user=request.user,
             feature="image_generate",
-            metadata={"provider": provider, "source": "gateway_api"},
+            metadata={**options, "source": "gateway_api"},
         )
     except InsufficientCreditsError:
         fresh_wallet = get_or_create_wallet(request.user)
@@ -199,8 +231,7 @@ def image_generate(request):
             api_key,
             {
                 "prompt": prompt,
-                "size": size,
-                "n": n,
+                **options,
             },
         )
     except NotImplementedError as exc:
@@ -224,6 +255,7 @@ def image_generate(request):
             for image in result.images
             if image.get("url") or image.get("base64")
         ],
+        settings=options,
     )
 
     return JsonResponse(
@@ -231,6 +263,7 @@ def image_generate(request):
             "images": result.images,
             "text": result_text,
             "job_id": job.id,
+            "settings": options,
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
         }
@@ -248,18 +281,20 @@ def image_edit(request):
 
     prompt = payload.get("prompt")
     input_image = payload.get("input_image")
-    provider = "nano_banana"
-
     if not prompt:
         return _json_error("prompt is required")
     if not input_image:
         return _json_error("input_image is required")
+    options, options_error = _image_options(payload)
+    if options_error:
+        return options_error
+    provider = options["provider"]
 
     try:
         wallet, _usage_event, charged_credits = charge_image_request(
             user=request.user,
             feature="image_edit",
-            metadata={"provider": provider, "source": "gateway_api"},
+            metadata={**options, "source": "gateway_api"},
         )
     except InsufficientCreditsError:
         fresh_wallet = get_or_create_wallet(request.user)
@@ -277,6 +312,7 @@ def image_edit(request):
             {
                 "prompt": prompt,
                 "input_image": input_image,
+                **options,
             },
         )
     except NotImplementedError as exc:
@@ -302,6 +338,7 @@ def image_edit(request):
             for image in result.images
             if image.get("url") or image.get("base64")
         ],
+        settings=options,
     )
 
     return JsonResponse(
@@ -309,6 +346,7 @@ def image_edit(request):
             "images": result.images,
             "text": result_text,
             "job_id": job.id,
+            "settings": options,
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
         }

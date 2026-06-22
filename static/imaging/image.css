@@ -249,6 +249,7 @@ body {
     background: #eef2f7;
     width: min(880px, 100%);
     align-self: flex-start;
+    position: relative;
 }
 
 .image-card.selected {
@@ -265,12 +266,89 @@ body {
     background: #f8fafc;
 }
 
+.image-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px;
+    background: #ffffff;
+    border-top: 1px solid #e8edf3;
+}
+
+.image-action {
+    appearance: none;
+    border: 1px solid #dce4ee;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #334155;
+    padding: 7px 11px;
+    font-size: 0.76rem;
+    font-weight: 650;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.image-action:hover {
+    border-color: #9ccaff;
+    color: var(--img-primary);
+    background: #f4f9ff;
+}
+
 .image-empty {
-    grid-column: 1 / -1;
     color: var(--img-muted);
     text-align: center;
-    padding: 36px 12px;
+    margin: auto;
+    padding: 48px 12px;
     font-size: 0.93rem;
+}
+
+.image-empty h2 {
+    margin: 12px 0 4px;
+    color: var(--img-text);
+    font-size: 1.25rem;
+}
+
+.image-empty p {
+    margin: 0;
+}
+
+.empty-orbit {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto;
+    border-radius: 20px;
+    display: grid;
+    place-items: center;
+    color: #ffffff;
+    font-size: 1.35rem;
+    background: linear-gradient(145deg, #725cff, #0084ff 55%, #2ed5c4);
+    box-shadow: 0 14px 30px rgba(72, 88, 220, 0.24);
+    transform: rotate(-4deg);
+}
+
+.prompt-starters {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.prompt-starters button {
+    border: 1px solid #dce6f2;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #38506a;
+    padding: 9px 13px;
+    font-size: 0.79rem;
+    cursor: pointer;
+}
+
+.prompt-starters button:hover {
+    border-color: #9ccaff;
+    color: var(--img-primary);
+    background: #f6faff;
 }
 
 .image-composer-wrap {
@@ -279,12 +357,89 @@ body {
     padding: 2px 2px 0;
 }
 
+.source-preview {
+    width: fit-content;
+    max-width: calc(100% - 20px);
+    margin: 0 10px 8px;
+    padding: 7px 9px 7px 7px;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) 28px;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid #cfe2f7;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: var(--img-shadow-soft);
+}
+
+.source-preview img {
+    width: 46px;
+    height: 46px;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
+.source-preview strong,
+.source-preview span {
+    display: block;
+}
+
+.source-preview strong {
+    font-size: 0.78rem;
+}
+
+.source-preview span {
+    margin-top: 2px;
+    color: var(--img-muted);
+    font-size: 0.72rem;
+}
+
+.source-remove {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: #eef2f6;
+    color: #4b5563;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
 .image-toolbar {
     display: flex;
     align-items: center;
     gap: 10px;
     margin: 0 10px 8px;
     flex-wrap: wrap;
+}
+
+.control-chip {
+    width: auto;
+    margin: 0;
+    padding: 4px 5px 4px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid #e0e7ef;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--img-muted);
+    font-size: 0.72rem;
+}
+
+.control-chip select {
+    width: auto;
+    min-width: 68px;
+    padding: 4px 24px 4px 5px;
+    border: none;
+    background-color: transparent;
+    color: var(--img-text);
+    font-size: 0.76rem;
+    font-weight: 650;
+    cursor: pointer;
 }
 
 .text-btn {
@@ -315,6 +470,14 @@ body {
     display: flex;
     align-items: flex-end;
     gap: 10px;
+    border: 1px solid transparent;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.image-composer:focus-within,
+.image-composer.drag-active {
+    border-color: rgba(0, 132, 255, 0.42);
+    box-shadow: 0 10px 28px rgba(0, 105, 204, 0.14);
 }
 
 .image-composer textarea {
@@ -363,6 +526,13 @@ body {
     margin: 8px 8px 0;
     color: var(--img-muted);
     font-size: 0.8rem;
+}
+
+.drop-hint {
+    margin: 7px 12px 0;
+    color: var(--img-muted);
+    font-size: 0.7rem;
+    text-align: center;
 }
 
 .hidden {
@@ -420,5 +590,17 @@ body {
         width: 100%;
         overflow-x: auto;
         padding-bottom: 2px;
+    }
+
+    .image-toolbar {
+        gap: 7px;
+    }
+
+    .control-chip span {
+        display: none;
+    }
+
+    .model-chip {
+        display: none;
     }
 }

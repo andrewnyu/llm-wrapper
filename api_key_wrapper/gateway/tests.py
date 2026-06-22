@@ -111,6 +111,20 @@ class ImageApiTests(TestCase):
         self.assertEqual(response.json()["text"], "Description ready.")
         self.assertEqual(response.json()["usage_charged"], "1.0000")
         self.assertIn("remaining_credits", response.json())
+        self.assertEqual(response.json()["settings"]["model"], "gemini-3.1-flash-image")
+        called_payload = mock_client.return_value.image_edit.call_args[0][1]
+        self.assertEqual(called_payload["aspect_ratio"], "1:1")
+        self.assertEqual(called_payload["image_size"], "1K")
+
+    def test_image_generate_rejects_invalid_model_settings(self):
+        self.client.login(username="imager", password="TestPass123!")
+        response = self.client.post(
+            reverse("image_generate"),
+            data='{"prompt":"a dog astronaut","model":"gemini-2.5-flash-image","image_size":"4K"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Unsupported resolution for this image model")
 
     def test_image_edit_requires_input_image(self):
         self.client.login(username="imager", password="TestPass123!")

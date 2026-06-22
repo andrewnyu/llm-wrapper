@@ -3,13 +3,13 @@ import re
 from typing import Callable, Optional
 
 from api_key_wrapper.gateway.key_resolver import get_api_key_for_provider
-from api_key_wrapper.gateway.models import ProviderKey
+from api_key_wrapper.gateway.model_catalog import DEFAULT_CHAT_MODEL, DEFAULT_CHAT_PROVIDER
 from api_key_wrapper.gateway.providers.registry import get_provider_client
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROVIDER = ProviderKey.PROVIDER_OPENAI
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_PROVIDER = DEFAULT_CHAT_PROVIDER
+DEFAULT_MODEL = DEFAULT_CHAT_MODEL
 
 
 def _chunk_text_for_streaming(text: str):

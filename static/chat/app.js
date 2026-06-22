@@ -8,6 +8,9 @@ const state = {
   lastFailedContent: "",
   sidebarOpen: false,
   typingMessageId: null,
+  selectedProvider: "",
+  selectedModel: "",
+  selectedModelLabel: "",
 };
 
 const elements = {
@@ -20,6 +23,9 @@ const elements = {
   messageList: document.getElementById("message-list"),
   threadEmpty: document.getElementById("thread-empty"),
   threadTitle: document.getElementById("thread-title"),
+  threadSubtitle: document.getElementById("thread-subtitle"),
+  modelSwitcher: document.getElementById("model-switcher"),
+  modelHint: document.getElementById("model-hint"),
   newChatBtn: document.getElementById("new-chat-btn"),
   sendBtn: document.getElementById("send-btn"),
   stopBtn: document.getElementById("stop-btn"),
@@ -81,6 +87,14 @@ function formatRelativeTime(isoTime) {
   return `${days}d`;
 }
 
+function modelLabelForId(modelId) {
+  if (!modelId) return "";
+  const option = Array.from(elements.modelSwitcher?.options || []).find(
+    (item) => item.dataset.model === modelId,
+  );
+  return option?.dataset.label || modelId;
+}
+
 function renderInlineMarkdown(text) {
   const escaped = escapeHtml(text);
   return escaped
@@ -139,9 +153,31 @@ function updateThreadTitle() {
   elements.threadTitle.textContent = active?.title || "New chat";
 }
 
+function selectModel(value, persist = true) {
+  const option = Array.from(elements.modelSwitcher?.options || []).find(
+    (item) => item.value === value && !item.disabled,
+  ) || Array.from(elements.modelSwitcher?.options || []).find((item) => !item.disabled);
+  if (!option) {
+    state.selectedProvider = "";
+    state.selectedModel = "";
+    state.selectedModelLabel = "No model configured";
+    elements.modelSwitcher.disabled = true;
+    elements.sendBtn.disabled = true;
+    elements.modelHint.textContent = "Ask an admin to configure a provider API key";
+    return;
+  }
+  elements.modelSwitcher.value = option.value;
+  state.selectedProvider = option.dataset.provider || "";
+  state.selectedModel = option.dataset.model || "";
+  state.selectedModelLabel = option.dataset.label || option.textContent.trim();
+  elements.threadSubtitle.textContent = state.selectedModelLabel;
+  elements.modelHint.textContent = `${state.selectedModelLabel} will answer your next message`;
+  if (persist) localStorage.setItem("chat-model", option.value);
+}
+
 function setStreaming(isStreaming) {
   state.streaming = isStreaming;
-  elements.sendBtn.disabled = isStreaming;
+  elements.sendBtn.disabled = isStreaming || !state.selectedModel;
   elements.stopBtn.classList.toggle("hidden", !isStreaming);
 }
 
@@ -231,11 +267,14 @@ function renderMessages() {
         : "";
 
       const retry = message.retryable ? '<button class="retry-btn" type="button">Retry</button>' : "";
+      const metaParts = [];
+      if (isAssistant && message.model) metaParts.push(modelLabelForId(message.model));
+      metaParts.push(formatClockTime(message.createdAt));
       return `
         <article class="${classes}" data-id="${message.id || ""}">
           ${copyButton}
           ${body}
-          <div class="message-meta">${formatClockTime(message.createdAt)}</div>
+          <div class="message-meta">${metaParts.filter(Boolean).join(" · ")}</div>
           ${retry}
         </article>
       `;
@@ -344,6 +383,7 @@ function replaceTypingWithAssistant(messageId, initialChunk = "") {
       content: initialChunk,
       createdAt: new Date().toISOString(),
       streaming: true,
+      model: state.selectedModel,
     };
   } else {
     state.messages.push({
@@ -352,6 +392,7 @@ function replaceTypingWithAssistant(messageId, initialChunk = "") {
       content: initialChunk,
       createdAt: new Date().toISOString(),
       streaming: true,
+      model: state.selectedModel,
     });
   }
   state.typingMessageId = null;
@@ -436,7 +477,11 @@ async function sendMessage() {
   try {
     const response = await apiFetch(`${API.conversations}/${conversation.id}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        provider: state.selectedProvider,
+        model: state.selectedModel,
+      }),
     });
     if (!response.ok || !response.body) {
       const data = await response.json().catch(() => ({}));
@@ -491,6 +536,7 @@ function bindEvents() {
   });
 
   elements.sendBtn.addEventListener("click", sendMessage);
+  elements.modelSwitcher?.addEventListener("change", () => selectModel(elements.modelSwitcher.value));
   elements.stopBtn.addEventListener("click", cancelStreaming);
   elements.jumpLatestBtn.addEventListener("click", () => {
     state.autoScroll = true;
@@ -584,6 +630,7 @@ function bindEvents() {
 async function bootstrap() {
   bindEvents();
   autosizeTextarea();
+  selectModel(localStorage.getItem("chat-model") || elements.modelSwitcher?.value || "", false);
 
   try {
     await listConversations();

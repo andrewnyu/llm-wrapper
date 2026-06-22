@@ -16,7 +16,7 @@ class OpenAIClient(ProviderClient):
         body = {
             "model": payload.get("model"),
             "messages": payload.get("messages", []),
-            "temperature": payload.get("temperature", 0.7),
+            "temperature": payload.get("temperature") if payload.get("temperature") is not None else 0.7,
         }
         response = requests.post(
             url,

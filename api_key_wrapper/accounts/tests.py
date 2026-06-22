@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import TwoFactorDevice, User
-from api_key_wrapper.usage.models import UsageEvent, UsageWallet
+from api_key_wrapper.usage.models import UsageWallet
 
 
 class AuthFlowTests(TestCase):
@@ -123,7 +123,7 @@ class AuthFlowTests(TestCase):
         wallet = UsageWallet.objects.get(user=created)
         self.assertEqual(str(wallet.balance_credits), "25.5000")
 
-    def test_signup_creates_user_loads_default_credits_and_redirects_to_2fa_setup(self):
+    def test_public_signup_is_disabled(self):
         response = self.client.post(
             reverse("accounts:signup"),
             {
@@ -134,29 +134,8 @@ class AuthFlowTests(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], reverse("accounts:two_factor_setup"))
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(User.objects.filter(username="selfsignup").exists())
 
-        created = User.objects.get(username="selfsignup")
-        wallet = UsageWallet.objects.get(user=created)
-        self.assertEqual(str(wallet.balance_credits), "10.0000")
-
-        load_event = UsageEvent.objects.filter(user=created, event_type=UsageEvent.EVENT_LOAD).latest("created_at")
-        self.assertEqual(str(load_event.credits_delta), "10.0000")
-        self.assertEqual(load_event.metadata.get("source"), "self_signup")
-
-        self.assertEqual(self.client.session.get("_auth_user_id"), str(created.id))
-
-    def test_signup_rejects_duplicate_email(self):
-        response = self.client.post(
-            reverse("accounts:signup"),
-            {
-                "username": "dupeuser",
-                "email": "tester@example.com",
-                "password1": "StrongPass123!",
-                "password2": "StrongPass123!",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "An account with this email already exists.")
+        get_response = self.client.get(reverse("accounts:signup"))
+        self.assertEqual(get_response.status_code, 404)

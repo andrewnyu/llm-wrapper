@@ -9,33 +9,18 @@ Minimal Django app for unified chat and image generation with per-user API keys 
 ```
 python3 -m venv .venv
 source .venv/bin/activate
-pip install 'django>=5,<6' pyotp qrcode pillow requests
+pip install -r requirements.txt
 ```
 
-2. Create `.env` from the example values:
+2. Copy `.env.example` to `.env` and fill in the shared provider keys:
 
 ```
-DJANGO_SECRET_KEY=change-me
-DJANGO_DEBUG=1
-DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
-DJANGO_CSRF_TRUSTED_ORIGINS=
-DJANGO_SESSION_COOKIE_SECURE=0
-DJANGO_CSRF_COOKIE_SECURE=0
-API_REQUEST_TIMEOUT_SECONDS=20
-USAGE_IMAGE_REQUEST_CREDITS=1.0
-USAGE_TEXT_CREDITS_PER_1K_TOKENS=0.25
-USAGE_ESTIMATED_CHARS_PER_TOKEN=4
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GOOGLE_API_KEY=
-NANO_BANANA_API_KEY=
-CUSTOM_API_KEY=
+cp .env.example .env
 ```
 
 3. Run migrations and create a superuser:
 
 ```
-python manage.py makemigrations
 python manage.py migrate
 python manage.py createsuperuser
 ```
@@ -72,14 +57,48 @@ Production requirements:
 API keys are loaded from `.env` and shared by all users.
 The **API Keys** page is read-only and shows which provider env vars are configured.
 
-## Nano Banana integration
+## Models and DeepSeek
 
-The stub client is in `api_key_wrapper/gateway/providers/nano_banana.py`.
-Replace the placeholder endpoint URL and response parsing with the real API details.
+The Chat page has a model switcher. A model becomes selectable when its provider key is present in `.env`.
+
+DeepSeek support is already wired to its OpenAI-compatible endpoint:
+
+1. Add your key to `.env`:
+
+   ```
+   DEEPSEEK_API_KEY=your-key-here
+   ```
+
+2. Restart the app:
+
+   ```
+   bash start_server.sh restart
+   ```
+
+3. Refresh Chat. **DeepSeek V4 Flash** and **DeepSeek V4 Pro** will be selectable.
+
+To add or remove future model IDs, edit `api_key_wrapper/gateway/model_catalog.py`. Provider HTTP behavior lives in `api_key_wrapper/gateway/providers/deepseek.py`; the API key mapping is in `api_key_wrapper/gateway/key_resolver.py`.
+
+## Nano Banana image studio
+
+The Image page supports:
+
+- Nano Banana 2, Nano Banana Pro, and the original Nano Banana
+- Model-specific aspect ratios and output resolutions
+- Generate and reference-image edit modes
+- Upload, paste, or drag-and-drop references
+- Prompt starters, edit-again actions, and image downloads
+
+Set `NANO_BANANA_API_KEY` in `.env`, then restart the server. Image model IDs and allowed output settings live in `api_key_wrapper/gateway/model_catalog.py`.
+
+## Account creation
+
+Public signup is disabled. Existing users can continue signing in. Administrators create users at `/admin/`; the admin form supports an initial credit load.
+
 
 ## Notes
 
-- All pages require login.
+- All app pages require login and confirmed 2FA.
 - Image generation/editing is synchronous for now (no background jobs).
 - Usage billing uses credits for image and text requests.
 - Only admins can view usage ledger/wallet and add load credits via Django admin.

@@ -1,15 +1,13 @@
 from django.contrib import messages
-from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
+from django.http import Http404
 from django.shortcuts import redirect, render
-from decimal import Decimal, InvalidOperation
 
-from api_key_wrapper.usage.services import get_or_create_wallet, load_credits
+from api_key_wrapper.usage.services import get_or_create_wallet
 
-from .forms import AccountPasswordChangeForm, LoginForm, SignupForm, TotpVerifyForm
+from .forms import AccountPasswordChangeForm, LoginForm, TotpVerifyForm
 from .models import TwoFactorDevice, User
 from .utils import build_totp_uri, generate_totp_secret, qr_code_data_uri, verify_totp
 
@@ -47,35 +45,7 @@ def logout_view(request):
 
 
 def signup_view(request):
-    if request.user.is_authenticated:
-        return redirect("chat:chat")
-
-    form = SignupForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        with transaction.atomic():
-            user = form.save(commit=False)
-            user.email = user.email.lower()
-            user.save()
-
-            raw_initial_credits = str(getattr(settings, "DEFAULT_SIGNUP_CREDITS", "10.0000"))
-            try:
-                initial_credits = Decimal(raw_initial_credits)
-            except InvalidOperation:
-                initial_credits = Decimal("10.0000")
-
-            if initial_credits > 0:
-                load_credits(
-                    user=user,
-                    amount=initial_credits,
-                    created_by=user,
-                    metadata={"source": "self_signup"},
-                )
-
-        login(request, user)
-        messages.success(request, "Account created. Please enable two-factor authentication.")
-        return redirect("accounts:two_factor_setup")
-
-    return render(request, "accounts/signup.html", {"form": form})
+    raise Http404("Public account creation is disabled.")
 
 
 @login_required

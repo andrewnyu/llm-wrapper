@@ -5,6 +5,7 @@ import requests
 from .base import ImageGenerationResult, ProviderClient
 
 from google import genai
+from google.genai import types
 
 
 class NanoBananaClient(ProviderClient):
@@ -15,7 +16,7 @@ class NanoBananaClient(ProviderClient):
 
     def image_generate(self, api_key, payload):
         prompt = payload.get("prompt")
-        model = payload.get("model", "gemini-2.5-flash-image")
+        model = payload.get("model", "gemini-3.1-flash-image")
 
         api_key = api_key or os.getenv("GOOGLE_API_KEY")
         if not api_key:
@@ -29,6 +30,7 @@ class NanoBananaClient(ProviderClient):
             response = client.models.generate_content(
                 model=model,
                 contents=[prompt],
+                config=self._generation_config(payload, model),
             )
             return ImageGenerationResult(
                 images=self._extract_images(response),
@@ -41,7 +43,7 @@ class NanoBananaClient(ProviderClient):
     def image_edit(self, api_key, payload):
         prompt = payload.get("prompt")
         input_image = payload.get("input_image")
-        model = payload.get("model", "gemini-2.5-flash-image")
+        model = payload.get("model", "gemini-3.1-flash-image")
 
         if not input_image:
             raise ValueError("input_image is required")
@@ -68,6 +70,7 @@ class NanoBananaClient(ProviderClient):
                         ],
                     }
                 ],
+                config=self._generation_config(payload, model),
             )
             return ImageGenerationResult(
                 images=self._extract_images(response),
@@ -76,6 +79,15 @@ class NanoBananaClient(ProviderClient):
             )
         except Exception as e:
             raise Exception(f"Nano Banana Edit Error: {e}")
+
+    def _generation_config(self, payload, model):
+        image_config = {"aspect_ratio": payload.get("aspect_ratio", "1:1")}
+        if model != "gemini-2.5-flash-image":
+            image_config["image_size"] = payload.get("image_size", "1K")
+        return types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
+            image_config=types.ImageConfig(**image_config),
+        )
 
     def _parse_data_url(self, data_url):
         if not isinstance(data_url, str):

@@ -12,6 +12,8 @@ from django.views.decorators.http import require_http_methods
 
 from .llm import DEFAULT_MODEL, DEFAULT_PROVIDER, generate
 from .models import Conversation, Message
+from api_key_wrapper.gateway.key_resolver import is_provider_configured
+from api_key_wrapper.gateway.model_catalog import get_chat_model, serialize_chat_models
 from api_key_wrapper.usage.services import (
     InsufficientCreditsError,
     charge_text_tokens,
@@ -105,7 +107,15 @@ def _check_rate_limit(request):
 
 @login_required
 def chat_view(request):
-    return render(request, "chat/chat.html")
+    return render(
+        request,
+        "chat/chat.html",
+        {
+            "chat_models": serialize_chat_models(),
+            "default_provider": DEFAULT_PROVIDER,
+            "default_model": DEFAULT_MODEL,
+        },
+    )
 
 
 @login_required
@@ -165,6 +175,13 @@ def conversation_messages_view(request, conversation_id):
         return _json_error("Invalid JSON")
 
     content = (payload.get("content") or "").strip()
+    provider = (payload.get("provider") or DEFAULT_PROVIDER).strip()
+    model = (payload.get("model") or DEFAULT_MODEL).strip()
+    model_choice = get_chat_model(provider, model)
+    if not model_choice:
+        return _json_error("Unsupported provider or model")
+    if not is_provider_configured(provider):
+        return _json_error(f"{model_choice['label']} is not configured on this server", status=403)
     if not content:
         return _json_error("content is required")
     if len(content) > MAX_MESSAGE_CHARS:
@@ -185,7 +202,7 @@ def conversation_messages_view(request, conversation_id):
         conversation=conversation,
         role=Message.ROLE_ASSISTANT,
         content="",
-        model=DEFAULT_MODEL,
+        model=model,
     )
     conversation.save(update_fields=["updated_at"])
 
@@ -211,6 +228,9 @@ def conversation_messages_view(request, conversation_id):
                     "requestId": request_id,
                     "conversationId": str(conversation.id),
                     "messageId": str(assistant_message.id),
+                    "provider": provider,
+                    "model": model,
+                    "modelLabel": model_choice["label"],
                 },
             )
 
@@ -223,7 +243,8 @@ def conversation_messages_view(request, conversation_id):
                 messages=history,
                 stream=True,
                 on_token=on_token,
-                model=DEFAULT_MODEL,
+                model=model,
+                provider=provider,
             )
 
             replay_text = ""
@@ -246,7 +267,7 @@ def conversation_messages_view(request, conversation_id):
                     input_text=input_text,
                     output_text=final_text,
                     reference_id=str(conversation.id),
-                    metadata={"provider": DEFAULT_PROVIDER, "model": DEFAULT_MODEL, "source": "chat_stream"},
+                    metadata={"provider": provider, "model": model, "source": "chat_stream"},
                 )
                 token_count = _usage_event.unit_count
             except InsufficientCreditsError:
