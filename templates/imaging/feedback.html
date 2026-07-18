@@ -4,20 +4,13 @@
 <link rel="stylesheet" href="/static/imaging/image.css" />
 <link rel="stylesheet" href="/static/imaging/feedback.css" />
 {% endblock %}
-{% block content %}
+{% block layout %}
 <section class="image-page feedback-page" id="feedback-app" data-csrf-token="{{ csrf_token }}">
     <header class="image-header">
         <div>
             <h1>Image Feedback</h1>
             <p class="muted">Upload an image and ask for description, spelling issues, and improvement comments.</p>
         </div>
-        <nav class="app-tabs" aria-label="App sections">
-            <a class="app-tab" href="/chat/">Chat</a>
-            <a class="app-tab" href="/image/">Image</a>
-            <a class="app-tab active" href="/image/feedback/">Image Feedback</a>
-            <a class="app-tab" href="/keys/">API Keys</a>
-            <a class="app-tab" href="/account/">Settings</a>
-        </nav>
     </header>
 
     <section class="image-feed">

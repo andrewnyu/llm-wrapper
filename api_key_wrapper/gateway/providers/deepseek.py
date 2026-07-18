@@ -1,12 +1,20 @@
 import requests
 from django.conf import settings
 
-from .base import ChatCompletionResult, ProviderClient
+from .base import ChatCompletionResult, ProviderClient, stream_openai_compatible_chat
 
 
 class DeepSeekClient(ProviderClient):
     provider_id = "deepseek"
     base_url = "https://api.deepseek.com"
+
+    def chat_stream(self, api_key, payload):
+        return stream_openai_compatible_chat(
+            f"{self.base_url}/chat/completions",
+            api_key,
+            payload,
+            settings.API_REQUEST_TIMEOUT_SECONDS,
+        )
 
     def chat_complete(self, api_key, payload):
         response = requests.post(

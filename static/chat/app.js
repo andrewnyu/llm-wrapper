@@ -38,6 +38,8 @@ const API = {
   cancel: "/api/generate/cancel",
 };
 
+const DEFAULT_HINT = "Enter to send · Shift+Enter for a new line";
+
 function getCsrfToken() {
   const fromData = elements.app?.dataset?.csrfToken;
   if (fromData) return fromData;
@@ -95,48 +97,181 @@ function modelLabelForId(modelId) {
   return option?.dataset.label || modelId;
 }
 
-function renderInlineMarkdown(text) {
+/* --------------------------------------------------------------------------
+   Markdown rendering (block-level, escaped-first so it is XSS-safe)
+   -------------------------------------------------------------------------- */
+
+function renderInline(text) {
   const escaped = escapeHtml(text);
   return escaped
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
+    .replace(/~~([^~]+)~~/g, "<del>$1</del>")
     .replace(
       /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
-    )
-    .replace(/\n/g, "<br>");
+    );
+}
+
+function renderCodeBlock(language, code) {
+  const label = language ? escapeHtml(language) : "code";
+  return `
+    <div class="code-block">
+      <div class="code-block-head">
+        <span>${label}</span>
+        <button class="copy-code-btn" type="button" data-code="${encodeURIComponent(code)}">Copy</button>
+      </div>
+      <pre><code>${escapeHtml(code)}</code></pre>
+    </div>
+  `;
+}
+
+function isTableSeparator(line) {
+  return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function splitTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => renderInline(cell.trim()));
+}
+
+function renderTextBlocks(text) {
+  const lines = text.split("\n");
+  const html = [];
+  let paragraph = [];
+  let listStack = []; // {type: "ul"|"ol", indent}
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${paragraph.map(renderInline).join("<br>")}</p>`);
+    paragraph = [];
+  };
+
+  const closeListsTo = (depth) => {
+    while (listStack.length > depth) {
+      html.push(`</${listStack.pop().type}>`);
+    }
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Table: header row followed by separator row
+    if (trimmed.startsWith("|") && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      flushParagraph();
+      closeListsTo(0);
+      const headers = splitTableRow(trimmed);
+      let j = i + 2;
+      const rows = [];
+      while (j < lines.length && lines[j].trim().startsWith("|")) {
+        rows.push(splitTableRow(lines[j]));
+        j += 1;
+      }
+      html.push(
+        `<div class="markdown-table-wrap"><table><thead><tr>${headers
+          .map((cell) => `<th>${cell}</th>`)
+          .join("")}</tr></thead><tbody>${rows
+          .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`)
+          .join("")}</tbody></table></div>`,
+      );
+      i = j - 1;
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    if (headingMatch) {
+      flushParagraph();
+      closeListsTo(0);
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${renderInline(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      flushParagraph();
+      closeListsTo(0);
+      html.push("<hr>");
+      continue;
+    }
+
+    if (trimmed.startsWith("> ") || trimmed === ">") {
+      flushParagraph();
+      closeListsTo(0);
+      const quoted = [];
+      while (i < lines.length && (lines[i].trim().startsWith("> ") || lines[i].trim() === ">")) {
+        quoted.push(lines[i].trim().replace(/^>\s?/, ""));
+        i += 1;
+      }
+      i -= 1;
+      html.push(`<blockquote>${quoted.map(renderInline).join("<br>")}</blockquote>`);
+      continue;
+    }
+
+    const listMatch = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (listMatch) {
+      flushParagraph();
+      const indent = Math.floor(listMatch[1].length / 2);
+      const type = /^[-*+]$/.test(listMatch[2]) ? "ul" : "ol";
+      while (listStack.length > indent + 1) closeListsTo(listStack.length - 1);
+      if (listStack.length === indent + 1 && listStack[listStack.length - 1].type !== type) {
+        closeListsTo(indent);
+      }
+      while (listStack.length < indent + 1) {
+        listStack.push({ type });
+        html.push(`<${type}>`);
+      }
+      html.push(`<li>${renderInline(listMatch[3])}</li>`);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      closeListsTo(0);
+      continue;
+    }
+
+    if (listStack.length) closeListsTo(0);
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+  closeListsTo(0);
+  return html.join("");
 }
 
 function renderMarkdown(text) {
   const blocks = [];
-  const pattern = /```([\w-]+)?\n?([\s\S]*?)```/g;
+  const pattern = /```([\w+-]+)?\n?([\s\S]*?)(?:```|$)/g;
   let cursor = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > cursor) {
       blocks.push({ type: "text", value: text.slice(cursor, match.index) });
     }
-    blocks.push({ type: "code", value: match[2] || "" });
+    blocks.push({ type: "code", language: match[1] || "", value: match[2] || "" });
     cursor = pattern.lastIndex;
   }
   if (cursor < text.length) blocks.push({ type: "text", value: text.slice(cursor) });
   if (!blocks.length) blocks.push({ type: "text", value: text });
 
   return blocks
-    .map((block) => {
-      if (block.type === "code") {
-        return `
-          <pre class="code-block">
-            <button class="copy-code-btn" type="button" data-code="${encodeURIComponent(block.value)}">Copy</button>
-            <code>${escapeHtml(block.value)}</code>
-          </pre>
-        `;
-      }
-      return `<div class="markdown-block">${renderInlineMarkdown(block.value)}</div>`;
-    })
+    .map((block) =>
+      block.type === "code"
+        ? renderCodeBlock(block.language, block.value)
+        : `<div class="markdown-block">${renderTextBlocks(block.value)}</div>`,
+    )
     .join("");
 }
+
+/* --------------------------------------------------------------------------
+   State helpers
+   -------------------------------------------------------------------------- */
 
 function getActiveConversation() {
   return state.conversations.find((item) => item.id === state.activeConversationId) || null;
@@ -151,6 +286,16 @@ function setSidebarOpen(open) {
 function updateThreadTitle() {
   const active = getActiveConversation();
   elements.threadTitle.textContent = active?.title || "New chat";
+}
+
+function applyConversationTitle(conversationId, title) {
+  if (!title) return;
+  const conversation = state.conversations.find((item) => item.id === conversationId);
+  if (conversation && conversation.title !== title) {
+    conversation.title = title;
+    renderConversations();
+    updateThreadTitle();
+  }
 }
 
 function selectModel(value, persist = true) {
@@ -171,7 +316,7 @@ function selectModel(value, persist = true) {
   state.selectedModel = option.dataset.model || "";
   state.selectedModelLabel = option.dataset.label || option.textContent.trim();
   elements.threadSubtitle.textContent = state.selectedModelLabel;
-  elements.modelHint.textContent = `${state.selectedModelLabel} will answer your next message`;
+  elements.modelHint.textContent = DEFAULT_HINT;
   if (persist) localStorage.setItem("chat-model", option.value);
 }
 
@@ -209,10 +354,14 @@ function addInlineError(text, retryable = false) {
   renderMessages();
 }
 
+/* --------------------------------------------------------------------------
+   Rendering
+   -------------------------------------------------------------------------- */
+
 function renderConversations() {
   const activeId = state.activeConversationId;
   if (!state.conversations.length) {
-    elements.conversationList.innerHTML = `<div class="muted">No conversations yet</div>`;
+    elements.conversationList.innerHTML = `<div class="muted" style="padding: 8px 10px;">No conversations yet</div>`;
     return;
   }
   elements.conversationList.innerHTML = state.conversations
@@ -224,8 +373,8 @@ function renderConversations() {
             <div class="conversation-title">${escapeHtml(conversation.title)}</div>
             <div class="conversation-time">${formatRelativeTime(conversation.updatedAt)}</div>
           </button>
-          <button class="conversation-more" type="button" data-id="${conversation.id}" title="Rename">✎</button>
-          <button class="conversation-delete" type="button" data-id="${conversation.id}" title="Delete">🗑</button>
+          <button class="conversation-more" type="button" data-id="${conversation.id}" title="Rename" aria-label="Rename">✎</button>
+          <button class="conversation-delete" type="button" data-id="${conversation.id}" title="Delete" aria-label="Delete">🗑</button>
         </div>
       `;
     })
@@ -242,6 +391,15 @@ function renderTypingIndicator() {
   `;
 }
 
+function renderMessageBody(message) {
+  if (message.typing) return renderTypingIndicator();
+  if (message.role === "assistant") {
+    const rendered = renderMarkdown(message.content || "");
+    return message.streaming ? `${rendered}<span class="stream-cursor"></span>` : rendered;
+  }
+  return `<div class="markdown-block">${escapeHtml(message.content || "")}</div>`;
+}
+
 function renderMessages() {
   elements.threadEmpty.classList.toggle("hidden", state.messages.length > 0);
   elements.messageList.innerHTML = state.messages
@@ -254,26 +412,18 @@ function renderMessages() {
         .filter(Boolean)
         .join(" ");
 
-      const isAssistant = message.role === "assistant";
-      const isTyping = Boolean(message.typing);
-      const body = isTyping
-        ? renderTypingIndicator()
-        : isAssistant
-          ? renderMarkdown(message.content || "")
-          : `<div class="markdown-block">${escapeHtml(message.content || "")}</div>`;
-
       const copyButton = message.content
         ? `<button class="message-copy" type="button" data-copy="${encodeURIComponent(message.content)}">Copy</button>`
         : "";
 
       const retry = message.retryable ? '<button class="retry-btn" type="button">Retry</button>' : "";
       const metaParts = [];
-      if (isAssistant && message.model) metaParts.push(modelLabelForId(message.model));
+      if (message.role === "assistant" && message.model) metaParts.push(modelLabelForId(message.model));
       metaParts.push(formatClockTime(message.createdAt));
       return `
         <article class="${classes}" data-id="${message.id || ""}">
           ${copyButton}
-          ${body}
+          <div class="message-body">${renderMessageBody(message)}</div>
           <div class="message-meta">${metaParts.filter(Boolean).join(" · ")}</div>
           ${retry}
         </article>
@@ -285,11 +435,29 @@ function renderMessages() {
   scrollToBottom();
 }
 
+// During streaming, update only the streaming message node so the rest of
+// the thread doesn't re-render on every token.
+function patchStreamingMessage(messageId) {
+  const message = state.messages.find((item) => item.id === messageId);
+  if (!message) return;
+  const node = elements.messageList.querySelector(`[data-id="${messageId}"] .message-body`);
+  if (!node) {
+    renderMessages();
+    return;
+  }
+  node.innerHTML = renderMessageBody(message);
+  scrollToBottom();
+}
+
 function autosizeTextarea() {
   const node = elements.input;
   node.style.height = "auto";
-  node.style.height = `${Math.min(node.scrollHeight, 180)}px`;
+  node.style.height = `${Math.min(node.scrollHeight, 190)}px`;
 }
+
+/* --------------------------------------------------------------------------
+   API
+   -------------------------------------------------------------------------- */
 
 async function listConversations() {
   const response = await apiFetch(API.conversations);
@@ -362,6 +530,10 @@ async function deleteConversation(conversationId) {
   updateThreadTitle();
 }
 
+/* --------------------------------------------------------------------------
+   Streaming send
+   -------------------------------------------------------------------------- */
+
 function addTypingPlaceholder() {
   const id = `typing-${Date.now()}`;
   state.typingMessageId = id;
@@ -376,37 +548,29 @@ function addTypingPlaceholder() {
 
 function replaceTypingWithAssistant(messageId, initialChunk = "") {
   const idx = state.messages.findIndex((item) => item.id === state.typingMessageId);
-  if (idx >= 0) {
-    state.messages[idx] = {
-      id: messageId,
-      role: "assistant",
-      content: initialChunk,
-      createdAt: new Date().toISOString(),
-      streaming: true,
-      model: state.selectedModel,
-    };
-  } else {
-    state.messages.push({
-      id: messageId,
-      role: "assistant",
-      content: initialChunk,
-      createdAt: new Date().toISOString(),
-      streaming: true,
-      model: state.selectedModel,
-    });
-  }
+  const assistantMessage = {
+    id: messageId,
+    role: "assistant",
+    content: initialChunk,
+    createdAt: new Date().toISOString(),
+    streaming: true,
+    model: state.selectedModel,
+  };
+  if (idx >= 0) state.messages[idx] = assistantMessage;
+  else state.messages.push(assistantMessage);
   state.typingMessageId = null;
+  renderMessages();
 }
 
 function upsertStreamingAssistant(messageId, chunk) {
   const index = state.messages.findIndex((item) => item.id === messageId);
   if (index === -1) {
     replaceTypingWithAssistant(messageId, chunk);
-  } else {
-    state.messages[index].content += chunk;
-    state.messages[index].streaming = true;
+    return;
   }
-  renderMessages();
+  state.messages[index].content += chunk;
+  state.messages[index].streaming = true;
+  patchStreamingMessage(messageId);
 }
 
 function finishStreamingAssistant(messageId, fullText) {
@@ -417,6 +581,7 @@ function finishStreamingAssistant(messageId, fullText) {
       role: "assistant",
       content: fullText || "",
       createdAt: new Date().toISOString(),
+      model: state.selectedModel,
     });
   } else {
     state.messages[index].content = fullText ?? state.messages[index].content;
@@ -456,8 +621,17 @@ function parseSseChunk(buffer, onEvent) {
 
 async function sendMessage() {
   const content = elements.input.value.trim();
+  if (!content || state.streaming) return;
+  if (!getActiveConversation()) {
+    try {
+      await createConversation();
+    } catch (error) {
+      addInlineError(error.message || "Failed to create conversation");
+      return;
+    }
+  }
   const conversation = getActiveConversation();
-  if (!content || !conversation || state.streaming) return;
+  if (!conversation) return;
 
   state.lastFailedContent = content;
   state.messages.push({
@@ -501,6 +675,7 @@ async function sendMessage() {
         if (eventName === "meta") {
           state.activeRequestId = data.requestId;
           assistantMessageId = data.messageId || assistantMessageId;
+          applyConversationTitle(conversation.id, data.title);
         } else if (eventName === "delta") {
           if (!sawDelta) {
             replaceTypingWithAssistant(assistantMessageId, "");
@@ -509,6 +684,7 @@ async function sendMessage() {
           upsertStreamingAssistant(assistantMessageId, data.text || "");
         } else if (eventName === "done") {
           finishStreamingAssistant(assistantMessageId, data.fullText || "");
+          applyConversationTitle(conversation.id, data.title);
           state.activeRequestId = null;
         } else if (eventName === "error") {
           state.activeRequestId = null;
@@ -525,11 +701,16 @@ async function sendMessage() {
   }
 }
 
+/* --------------------------------------------------------------------------
+   Events + bootstrap
+   -------------------------------------------------------------------------- */
+
 function bindEvents() {
   elements.newChatBtn.addEventListener("click", async () => {
     try {
       await createConversation();
       if (window.innerWidth <= 960) setSidebarOpen(false);
+      elements.input.focus();
     } catch (error) {
       addInlineError(error.message || "Failed to create conversation");
     }
@@ -556,7 +737,7 @@ function bindEvents() {
       copyCodeBtn.textContent = "Copied";
       setTimeout(() => {
         copyCodeBtn.textContent = "Copy";
-      }, 1000);
+      }, 1200);
       return;
     }
 
@@ -567,7 +748,7 @@ function bindEvents() {
       copyMessageBtn.textContent = "Copied";
       setTimeout(() => {
         copyMessageBtn.textContent = "Copy";
-      }, 1000);
+      }, 1200);
       return;
     }
 
@@ -639,6 +820,7 @@ async function bootstrap() {
   } catch (error) {
     addInlineError(error.message || "Failed to load chat");
   }
+  elements.input.focus();
 }
 
 bootstrap();

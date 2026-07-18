@@ -10,7 +10,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_http_methods
 
-from .llm import DEFAULT_MODEL, DEFAULT_PROVIDER, generate
+from .llm import DEFAULT_MODEL, DEFAULT_PROVIDER, generate_stream
 from .models import Conversation, Message
 from api_key_wrapper.gateway.key_resolver import is_provider_configured
 from api_key_wrapper.gateway.model_catalog import get_chat_model, serialize_chat_models
@@ -193,11 +193,15 @@ def conversation_messages_view(request, conversation_id):
     if not is_provider_configured(provider):
         return _json_error(f"{model_choice['label']} is not configured on this server", status=403)
 
+    is_first_message = not conversation.messages.exists()
     Message.objects.create(
         conversation=conversation,
         role=Message.ROLE_USER,
         content=content,
     )
+    if is_first_message and conversation.title in ("", "New chat", "New Chat"):
+        conversation.title = content[:60].strip() or conversation.title
+        conversation.save(update_fields=["title"])
     assistant_message = Message.objects.create(
         conversation=conversation,
         role=Message.ROLE_ASSISTANT,
@@ -219,7 +223,6 @@ def conversation_messages_view(request, conversation_id):
     )
 
     def event_stream():
-        chunks = []
         assistant_text = ""
         try:
             yield _sse(
@@ -231,30 +234,30 @@ def conversation_messages_view(request, conversation_id):
                     "provider": provider,
                     "model": model,
                     "modelLabel": model_choice["label"],
+                    "title": conversation.title,
                 },
             )
 
-            def on_token(token):
-                if token:
-                    chunks.append(token)
-
-            assistant_text = generate(
+            token_stream = generate_stream(
                 user=_get_request_user(request),
                 messages=history,
-                stream=True,
-                on_token=on_token,
                 model=model,
                 provider=provider,
             )
+            try:
+                for token in token_stream:
+                    if stop_event.is_set():
+                        break
+                    if not token:
+                        continue
+                    assistant_text += token
+                    yield _sse("delta", {"text": token})
+            finally:
+                close = getattr(token_stream, "close", None)
+                if close:
+                    close()
 
-            replay_text = ""
-            for chunk in chunks:
-                if stop_event.is_set():
-                    break
-                replay_text += chunk
-                yield _sse("delta", {"text": chunk})
-
-            final_text = replay_text if stop_event.is_set() else assistant_text
+            final_text = assistant_text
             input_text = "\n".join(item.get("content", "") for item in history)
             wallet_obj = None
             token_count = None
@@ -293,6 +296,7 @@ def conversation_messages_view(request, conversation_id):
                 "done",
                 {
                     "fullText": final_text,
+                    "title": conversation.title,
                     "usageCharged": str(charged_credits),
                     "remainingCredits": str(wallet_obj.balance_credits),
                 },

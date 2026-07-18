@@ -60,15 +60,12 @@ class ChatApiTests(TestCase):
     def test_streaming_smoke(self):
         conversation = Conversation.objects.create(user=self.user, title="Demo")
 
-        def fake_generate(**kwargs):
-            on_token = kwargs.get("on_token")
-            if on_token:
-                on_token("Hi ")
-                on_token("there")
-            return "Hi there"
+        def fake_generate_stream(**kwargs):
+            yield "Hi "
+            yield "there"
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
-            with patch("api_key_wrapper.chat.views.generate", side_effect=fake_generate):
+            with patch("api_key_wrapper.chat.views.generate_stream", side_effect=fake_generate_stream):
                 response = self.client.post(
                     f"/api/conversations/{conversation.id}/messages",
                     data='{"content":"Say hi"}',
@@ -86,6 +83,42 @@ class ChatApiTests(TestCase):
 
         assistant = Message.objects.filter(conversation=conversation, role="assistant").latest("created_at")
         self.assertEqual(assistant.content, "Hi there")
+
+    def test_first_message_autotitles_conversation(self):
+        conversation = Conversation.objects.create(user=self.user, title="New chat")
+
+        def fake_generate_stream(**kwargs):
+            yield "Sure."
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.chat.views.generate_stream", side_effect=fake_generate_stream):
+                response = self.client.post(
+                    f"/api/conversations/{conversation.id}/messages",
+                    data='{"content":"Help me plan a launch"}',
+                    content_type="application/json",
+                )
+                b"".join(response.streaming_content)
+
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.title, "Help me plan a launch")
+
+    def test_custom_title_is_not_overwritten(self):
+        conversation = Conversation.objects.create(user=self.user, title="My project")
+
+        def fake_generate_stream(**kwargs):
+            yield "Sure."
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.chat.views.generate_stream", side_effect=fake_generate_stream):
+                response = self.client.post(
+                    f"/api/conversations/{conversation.id}/messages",
+                    data='{"content":"Hello"}',
+                    content_type="application/json",
+                )
+                b"".join(response.streaming_content)
+
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.title, "My project")
 
     def test_streaming_rejects_when_insufficient_credits(self):
         conversation = Conversation.objects.create(user=self.user, title="LowCredits")
@@ -105,7 +138,9 @@ class ChatApiTests(TestCase):
         conversation = Conversation.objects.create(user=self.user, title="DeepSeek")
 
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=False):
-            with patch("api_key_wrapper.chat.views.generate", return_value="Deep answer") as mock_generate:
+            with patch(
+                "api_key_wrapper.chat.views.generate_stream", return_value=iter(["Deep answer"])
+            ) as mock_generate:
                 response = self.client.post(
                     f"/api/conversations/{conversation.id}/messages",
                     data=(

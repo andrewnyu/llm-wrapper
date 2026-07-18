@@ -3,20 +3,13 @@
 {% block extra_head %}
 <link rel="stylesheet" href="/static/imaging/image.css" />
 {% endblock %}
-{% block content %}
+{% block layout %}
 <section class="image-page" id="image-app" data-csrf-token="{{ csrf_token }}">
     <header class="image-header">
         <div>
             <h1>Image Studio</h1>
             <p class="muted">Create, remix, and refine images with the Nano Banana family.</p>
         </div>
-        <nav class="app-tabs" aria-label="App sections">
-            <a class="app-tab" href="/chat/">Chat</a>
-            <a class="app-tab active" href="/image/">Image</a>
-            <a class="app-tab" href="/image/feedback/">Image Feedback</a>
-            <a class="app-tab" href="/keys/">API Keys</a>
-            <a class="app-tab" href="/account/">Settings</a>
-        </nav>
     </header>
 
     <section class="image-feed">
