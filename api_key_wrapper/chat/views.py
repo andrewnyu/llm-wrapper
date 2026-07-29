@@ -13,7 +13,7 @@ from django.views.decorators.http import require_http_methods
 from .llm import DEFAULT_MODEL, DEFAULT_PROVIDER, generate_stream
 from .models import Conversation, Message
 from api_key_wrapper.gateway.key_resolver import is_provider_configured
-from api_key_wrapper.gateway.model_catalog import get_chat_model, serialize_chat_models
+from api_key_wrapper.gateway.model_catalog import get_chat_model, get_default_chat_model, serialize_chat_models
 from api_key_wrapper.usage.services import (
     InsufficientCreditsError,
     charge_text_tokens,
@@ -108,13 +108,14 @@ def _check_rate_limit(request):
 
 @login_required
 def chat_view(request):
+    default_choice = get_default_chat_model()
     return render(
         request,
         "chat/chat.html",
         {
             "chat_models": serialize_chat_models(),
-            "default_provider": DEFAULT_PROVIDER,
-            "default_model": DEFAULT_MODEL,
+            "default_provider": default_choice["provider"] if default_choice else DEFAULT_PROVIDER,
+            "default_model": default_choice["model"] if default_choice else DEFAULT_MODEL,
         },
     )
 
@@ -176,8 +177,9 @@ def conversation_messages_view(request, conversation_id):
         return _json_error("Invalid JSON")
 
     content = (payload.get("content") or "").strip()
-    provider = (payload.get("provider") or DEFAULT_PROVIDER).strip()
-    model = (payload.get("model") or DEFAULT_MODEL).strip()
+    default_choice = get_default_chat_model()
+    provider = (payload.get("provider") or (default_choice or {}).get("provider") or DEFAULT_PROVIDER).strip()
+    model = (payload.get("model") or (default_choice or {}).get("model") or DEFAULT_MODEL).strip()
     model_choice = get_chat_model(provider, model)
     if not model_choice:
         return _json_error("Unsupported provider or model")

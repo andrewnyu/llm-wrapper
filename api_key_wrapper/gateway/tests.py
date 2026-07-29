@@ -6,10 +6,71 @@ from django.test import TestCase
 from django.urls import reverse
 
 from api_key_wrapper.accounts.models import TwoFactorDevice, User
+from api_key_wrapper.gateway.model_catalog import get_chat_model, serialize_chat_models
+from api_key_wrapper.gateway.models import ProviderModel
 from api_key_wrapper.imaging.models import ImageJob
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult, ImageGenerationResult
 from api_key_wrapper.gateway.providers.nano_banana import NanoBananaClient
 from api_key_wrapper.usage.models import UsageEvent, UsageWallet
+
+
+class ChatModelCatalogTests(TestCase):
+    def test_configured_anthropic_key_enables_default_claude_models(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False):
+            models = serialize_chat_models()
+
+        claude_models = [item for item in models if item["provider"] == "anthropic"]
+        self.assertTrue(claude_models)
+        self.assertTrue(all(item["configured"] for item in claude_models))
+
+    def test_provider_specific_env_models_are_discovered(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DEEPSEEK_API_KEY": "test-key",
+                "DEEPSEEK_CHAT_MODELS": "deepseek-chat=DeepSeek Chat,deepseek-custom=DeepSeek Custom",
+            },
+            clear=False,
+        ):
+            model = get_chat_model("deepseek", "deepseek-custom")
+
+        self.assertIsNotNone(model)
+        self.assertEqual(model["label"], "DeepSeek Custom")
+
+    def test_global_env_models_are_discovered(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "test-key",
+                "CHAT_MODELS": "anthropic:claude-custom=Claude Custom",
+            },
+            clear=False,
+        ):
+            model = get_chat_model("anthropic", "claude-custom")
+
+        self.assertIsNotNone(model)
+        self.assertEqual(model["label"], "Claude Custom")
+
+    def test_admin_display_name_overrides_catalog_label(self):
+        ProviderModel.objects.create(
+            provider="deepseek",
+            model="deepseek-chat",
+            display_name="Drew's DeepSeek",
+        )
+
+        model = get_chat_model("deepseek", "deepseek-chat")
+
+        self.assertEqual(model["label"], "Drew's DeepSeek")
+
+    def test_admin_can_disable_catalog_model(self):
+        ProviderModel.objects.create(
+            provider="deepseek",
+            model="deepseek-chat",
+            display_name="Hidden DeepSeek",
+            is_enabled=False,
+        )
+
+        self.assertIsNone(get_chat_model("deepseek", "deepseek-chat"))
 
 
 class ChatApiTests(TestCase):

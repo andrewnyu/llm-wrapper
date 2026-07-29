@@ -35,3 +35,23 @@ class ProviderKey(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_provider_display()} - {self.name}"
+
+
+class ProviderModel(models.Model):
+    provider = models.CharField(max_length=32, choices=ProviderKey.PROVIDER_CHOICES)
+    model = models.CharField(max_length=128)
+    display_name = models.CharField(max_length=96, blank=True, default="")
+    description = models.CharField(max_length=160, blank=True, default="")
+    is_enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["provider", "model"]
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "model"], name="gateway_provider_model_unique"),
+        ]
+
+    def __str__(self) -> str:
+        label = self.display_name or self.model
+        return f"{self.get_provider_display()} - {label}"

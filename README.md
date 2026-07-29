@@ -57,27 +57,29 @@ Production requirements:
 API keys are loaded from `.env` and shared by all users.
 The **API Keys** page is read-only and shows which provider env vars are configured.
 
-## Models and DeepSeek
+## Chat models
 
-The Chat page has a model switcher. A model becomes selectable when its provider key is present in `.env`.
+The Chat page auto-detects configured providers from `.env`. A provider's built-in default chat models become selectable when its provider key is present:
 
-DeepSeek support is already wired to its OpenAI-compatible endpoint:
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `DEEPSEEK_API_KEY`
 
-1. Add your key to `.env`:
+You can add model IDs without changing code:
 
-   ```
-   DEEPSEEK_API_KEY=your-key-here
-   ```
+```bash
+DEEPSEEK_CHAT_MODELS=deepseek-chat=DeepSeek Chat,deepseek-reasoner=DeepSeek Reasoner
+ANTHROPIC_CHAT_MODELS=claude-sonnet-4-20250514=Claude Sonnet 4
+CHAT_MODELS=anthropic:claude-custom=Claude Custom,deepseek:deepseek-custom=DeepSeek Custom
+```
 
-2. Restart the app:
+Restart the app after changing `.env`:
 
-   ```
-   bash start_server.sh restart
-   ```
+```bash
+bash start_server.sh restart
+```
 
-3. Refresh Chat. **DeepSeek V4 Flash** and **DeepSeek V4 Pro** will be selectable.
-
-To add or remove future model IDs, edit `api_key_wrapper/gateway/model_catalog.py`. Provider HTTP behavior lives in `api_key_wrapper/gateway/providers/deepseek.py`; the API key mapping is in `api_key_wrapper/gateway/key_resolver.py`.
+Admins can rename or hide chat models in Django admin under **Provider models**. If a display name is blank, the app falls back to the default label or a title-cased model ID.
 
 ## Nano Banana image studio
 

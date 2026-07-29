@@ -302,9 +302,9 @@
 
 .message-item.user {
     width: fit-content;
-    max-width: min(78%, 680px);
+    max-width: min(78%, 640px);
     margin-left: auto;
-    padding: 11px 16px;
+    padding: 9px 14px;
     border-radius: 20px 20px 6px 20px;
     background: var(--primary-container);
     color: var(--on-primary-container);
@@ -313,9 +313,16 @@
 }
 
 .message-item.assistant {
+    width: fit-content;
+    max-width: min(100%, 760px);
     min-height: 34px;
     padding: 3px 8px 0 42px;
     word-break: break-word;
+}
+
+.message-body {
+    width: fit-content;
+    max-width: 100%;
 }
 
 .message-item.assistant::before {
@@ -820,6 +827,7 @@
     }
 
     .message-item.assistant {
+        max-width: 100%;
         padding-left: 38px;
     }
 

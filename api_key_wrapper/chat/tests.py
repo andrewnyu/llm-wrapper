@@ -145,18 +145,18 @@ class ChatApiTests(TestCase):
                     f"/api/conversations/{conversation.id}/messages",
                     data=(
                         '{"content":"Think about this","provider":"deepseek",'
-                        '"model":"deepseek-v4-flash"}'
+                        '"model":"deepseek-chat"}'
                     ),
                     content_type="application/json",
                 )
                 payload = b"".join(response.streaming_content).decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('"model": "deepseek-v4-flash"', payload)
+        self.assertIn('"model": "deepseek-chat"', payload)
         self.assertEqual(mock_generate.call_args.kwargs["provider"], "deepseek")
-        self.assertEqual(mock_generate.call_args.kwargs["model"], "deepseek-v4-flash")
+        self.assertEqual(mock_generate.call_args.kwargs["model"], "deepseek-chat")
         assistant = Message.objects.filter(conversation=conversation, role="assistant").latest("created_at")
-        self.assertEqual(assistant.model, "deepseek-v4-flash")
+        self.assertEqual(assistant.model, "deepseek-chat")
 
     def test_streaming_rejects_unknown_model(self):
         conversation = Conversation.objects.create(user=self.user, title="Unknown")
