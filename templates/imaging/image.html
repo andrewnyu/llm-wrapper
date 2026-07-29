@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Image · API Key Wrapper{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="/static/imaging/image.css?v=20260729-2" />
+<link rel="stylesheet" href="/static/imaging/image.css?v=20260729-3" />
 {% endblock %}
 {% block layout %}
 <section class="image-page" id="image-app" data-csrf-token="{{ csrf_token }}">
@@ -115,5 +115,5 @@
 </section>
 
 {{ image_models|json_script:"image-models-data" }}
-<script type="module" src="/static/imaging/image.js?v=20260729-2"></script>
+<script type="module" src="/static/imaging/image.js?v=20260729-3"></script>
 {% endblock %}

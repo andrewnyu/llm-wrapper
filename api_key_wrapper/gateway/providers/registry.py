@@ -1,7 +1,9 @@
 from .anthropic import AnthropicClient
 from .custom import CustomClient
 from .deepseek import DeepSeekClient
+from .glm import GLMClient
 from .google import GoogleClient
+from .kimi import KimiClient
 from .nano_banana import NanoBananaClient
 from .openai import OpenAIClient
 
@@ -12,6 +14,8 @@ PROVIDER_REGISTRY = {
     "google": GoogleClient(),
     "nano_banana": NanoBananaClient(),
     "deepseek": DeepSeekClient(),
+    "glm": GLMClient(),
+    "kimi": KimiClient(),
     "custom": CustomClient(),
 }
 

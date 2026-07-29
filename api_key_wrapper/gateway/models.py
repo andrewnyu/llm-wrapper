@@ -8,6 +8,8 @@ class ProviderKey(models.Model):
     PROVIDER_GOOGLE = "google"
     PROVIDER_NANO_BANANA = "nano_banana"
     PROVIDER_DEEPSEEK = "deepseek"
+    PROVIDER_GLM = "glm"
+    PROVIDER_KIMI = "kimi"
     PROVIDER_CUSTOM = "custom"
 
     PROVIDER_CHOICES = [
@@ -16,6 +18,8 @@ class ProviderKey(models.Model):
         (PROVIDER_GOOGLE, "Google"),
         (PROVIDER_NANO_BANANA, "Nano Banana"),
         (PROVIDER_DEEPSEEK, "DeepSeek"),
+        (PROVIDER_GLM, "GLM"),
+        (PROVIDER_KIMI, "Kimi"),
         (PROVIDER_CUSTOM, "Custom"),
     ]
 

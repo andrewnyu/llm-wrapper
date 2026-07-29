@@ -15,7 +15,12 @@
         {% for row in status_rows %}
             <tr>
                 <td>{{ row.label }}</td>
-                <td><code>{{ row.env_var }}</code></td>
+                <td>
+                    <code>{{ row.env_var }}</code>
+                    {% for fallback in row.fallback_env_vars %}
+                        <span class="muted">or</span> <code>{{ fallback }}</code>
+                    {% endfor %}
+                </td>
                 <td>
                     {% if row.configured %}
                         <span class="message success">Configured</span>

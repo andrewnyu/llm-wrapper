@@ -20,6 +20,15 @@ DEFAULT_CHAT_MODELS_BY_PROVIDER = {
         ("deepseek-chat", "DeepSeek Chat", "General-purpose DeepSeek model"),
         ("deepseek-reasoner", "DeepSeek Reasoner", "DeepSeek reasoning model"),
     ),
+    "glm": (
+        ("glm-5.2", "GLM-5.2", "Latest flagship GLM model"),
+        ("glm-5", "GLM-5", "Flagship GLM model"),
+    ),
+    "kimi": (
+        ("moonshot-v1-8k", "Kimi 8K", "Moonshot-compatible Kimi model"),
+        ("moonshot-v1-32k", "Kimi 32K", "Long-context Kimi model"),
+        ("moonshot-v1-128k", "Kimi 128K", "Extended-context Kimi model"),
+    ),
 }
 
 DEFAULT_CHAT_PROVIDER = "openai"
@@ -31,6 +40,7 @@ IMAGE_MODELS = (
         "model": "gemini-3.1-flash-image",
         "label": "Nano Banana 2",
         "description": "Best balance of quality, speed, and cost",
+        "supports_edit": True,
         "resolutions": ("512", "1K", "2K", "4K"),
         "aspect_ratios": (
             "1:1",
@@ -54,6 +64,7 @@ IMAGE_MODELS = (
         "model": "gemini-3-pro-image",
         "label": "Nano Banana Pro",
         "description": "Professional assets and complex instructions",
+        "supports_edit": True,
         "resolutions": ("1K", "2K", "4K"),
         "aspect_ratios": ("1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"),
     },
@@ -62,8 +73,18 @@ IMAGE_MODELS = (
         "model": "gemini-2.5-flash-image",
         "label": "Nano Banana",
         "description": "Fast 1K image generation",
+        "supports_edit": True,
         "resolutions": ("1K",),
         "aspect_ratios": ("1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"),
+    },
+    {
+        "provider": "glm",
+        "model": "glm-image",
+        "label": "GLM Image",
+        "description": "GLM image generation",
+        "supports_edit": False,
+        "resolutions": ("1K",),
+        "aspect_ratios": ("1:1", "3:4", "4:3", "9:16", "16:9"),
     },
 )
 
@@ -224,6 +245,7 @@ def serialize_image_models():
             **item,
             "resolutions": list(item["resolutions"]),
             "aspect_ratios": list(item["aspect_ratios"]),
+            "supports_edit": item.get("supports_edit", False),
             "configured": is_provider_configured(item["provider"]),
         }
         for item in IMAGE_MODELS

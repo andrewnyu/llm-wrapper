@@ -64,12 +64,16 @@ The Chat page auto-detects configured providers from `.env`. A provider's built-
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `DEEPSEEK_API_KEY`
+- `GLM_API_KEY`
+- `KIMI_API_KEY`
 
 You can add model IDs without changing code:
 
 ```bash
 DEEPSEEK_CHAT_MODELS=deepseek-chat=DeepSeek Chat,deepseek-reasoner=DeepSeek Reasoner
 ANTHROPIC_CHAT_MODELS=claude-sonnet-4-20250514=Claude Sonnet 4
+GLM_CHAT_MODELS=glm-5.2=GLM-5.2,glm-5=GLM-5
+KIMI_CHAT_MODELS=moonshot-v1-8k=Kimi 8K,moonshot-v1-32k=Kimi 32K
 CHAT_MODELS=anthropic:claude-custom=Claude Custom,deepseek:deepseek-custom=DeepSeek Custom
 ```
 
@@ -91,7 +95,7 @@ The Image page supports:
 - Upload, paste, or drag-and-drop references
 - Prompt starters, edit-again actions, and image downloads
 
-Set `NANO_BANANA_API_KEY` in `.env`, then restart the server. Image model IDs and allowed output settings live in `api_key_wrapper/gateway/model_catalog.py`.
+Set `NANO_BANANA_API_KEY` or `GOOGLE_API_KEY` in `.env`, then restart the server. GLM image generation is available when `GLM_API_KEY` is set. Image model IDs and allowed output settings live in `api_key_wrapper/gateway/model_catalog.py`.
 
 ## Account creation
 

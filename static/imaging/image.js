@@ -24,9 +24,13 @@ function selectedModelConfig() {
   return imageModels.find((item) => item.model === modelSelect.value) || imageModels[0] || null;
 }
 
+function selectedModelSupportsEdit() {
+  return selectedModelConfig()?.supports_edit !== false;
+}
+
 function updateGenerateButton() {
   const model = selectedModelConfig();
-  const canGenerate = Boolean(model?.configured && promptInput.value.trim());
+  const canGenerate = Boolean(model?.configured && promptInput.value.trim() && (!selectedSourceImage || selectedModelSupportsEdit()));
   generateButton.disabled = isGenerating || !canGenerate;
   generateButton.setAttribute("aria-busy", isGenerating ? "true" : "false");
 }
@@ -67,6 +71,10 @@ function refreshImageControls() {
     localStorage.getItem("image-size") || imageSizeSelect.value || "1K",
   );
   localStorage.setItem("image-model", model.model);
+  if (selectedSourceImage) setSelectedSource(selectedSourceImage);
+  if (selectedSourceImage && !selectedModelSupportsEdit()) {
+    setStatus(`${model.label} can generate images, but does not support reference edits.`);
+  }
   updateGenerateButton();
 }
 
@@ -266,8 +274,11 @@ function clearSelectedCard() {
 function setSelectedSource(src, sourceType = "selected") {
   selectedSourceImage = src || null;
   if (selectedSourceImage) {
-    generateButton.title = "Edit selected image";
-    sourceStatus.textContent = sourceType === "upload" ? "Uploaded reference" : "Selected reference";
+    const supportsEdit = selectedModelSupportsEdit();
+    generateButton.title = supportsEdit ? "Edit selected image" : "Selected model does not support reference edits";
+    sourceStatus.textContent = supportsEdit
+      ? sourceType === "upload" ? "Uploaded reference" : "Selected reference"
+      : "Reference not supported";
     sourcePreviewImage.src = selectedSourceImage;
     sourcePreview.classList.remove("hidden");
   } else {
@@ -311,6 +322,10 @@ async function runImageRequest() {
   const prompt = promptInput.value.trim();
   if (!prompt || isGenerating || !selectedModelConfig()?.configured) {
     promptInput.focus();
+    return;
+  }
+  if (selectedSourceImage && !selectedModelSupportsEdit()) {
+    setStatus(`${selectedModelConfig()?.label || "This model"} does not support reference-image edits.`);
     return;
   }
 

@@ -320,6 +320,9 @@ def image_edit(request):
     options, options_error = _image_options(payload)
     if options_error:
         return options_error
+    model_config = get_image_model(options["model"])
+    if not model_config.get("supports_edit", False):
+        return _json_error("This image model does not support reference-image edits")
     provider = options["provider"]
 
     credit_error = _check_image_credits(request.user)

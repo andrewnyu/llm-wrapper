@@ -6,10 +6,12 @@ from django.test import TestCase
 from django.urls import reverse
 
 from api_key_wrapper.accounts.models import TwoFactorDevice, User
-from api_key_wrapper.gateway.model_catalog import get_chat_model, serialize_chat_models
+from api_key_wrapper.gateway.key_resolver import get_api_key_for_provider, is_provider_configured
+from api_key_wrapper.gateway.model_catalog import get_chat_model, get_image_model, serialize_chat_models, serialize_image_models
 from api_key_wrapper.gateway.models import ProviderModel
 from api_key_wrapper.imaging.models import ImageJob
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult, ImageGenerationResult
+from api_key_wrapper.gateway.providers.glm import GLMClient
 from api_key_wrapper.gateway.providers.nano_banana import NanoBananaClient
 from api_key_wrapper.usage.models import UsageEvent, UsageWallet
 
@@ -22,6 +24,13 @@ class ChatModelCatalogTests(TestCase):
         claude_models = [item for item in models if item["provider"] == "anthropic"]
         self.assertTrue(claude_models)
         self.assertTrue(all(item["configured"] for item in claude_models))
+
+    def test_glm_and_kimi_keys_enable_chat_models(self):
+        with patch.dict(os.environ, {"GLM_API_KEY": "glm-key", "KIMI_API_KEY": "kimi-key"}, clear=False):
+            models = serialize_chat_models()
+
+        self.assertTrue(any(item["provider"] == "glm" and item["configured"] for item in models))
+        self.assertTrue(any(item["provider"] == "kimi" and item["configured"] for item in models))
 
     def test_provider_specific_env_models_are_discovered(self):
         with patch.dict(
@@ -71,6 +80,20 @@ class ChatModelCatalogTests(TestCase):
         )
 
         self.assertIsNone(get_chat_model("deepseek", "deepseek-chat"))
+
+    def test_nano_banana_can_use_google_api_key_fallback(self):
+        with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "", "GOOGLE_API_KEY": "google-key"}, clear=False):
+            self.assertTrue(is_provider_configured("nano_banana"))
+            self.assertEqual(get_api_key_for_provider("nano_banana"), "google-key")
+
+    def test_glm_key_enables_image_model(self):
+        with patch.dict(os.environ, {"GLM_API_KEY": "glm-key"}, clear=False):
+            image_models = serialize_image_models()
+
+        glm_image = next(item for item in image_models if item["provider"] == "glm")
+        self.assertEqual(glm_image["model"], "glm-image")
+        self.assertTrue(glm_image["configured"])
+        self.assertIsNotNone(get_image_model("glm-image"))
 
 
 class ChatApiTests(TestCase):
@@ -188,6 +211,38 @@ class ImageApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "Unsupported resolution for this image model")
 
+    def test_glm_image_generate_success(self):
+        self.client.login(username="imager", password="TestPass123!")
+
+        mock_result = ImageGenerationResult(images=[{"url": "https://example.test/glm.png"}])
+        with patch.dict(os.environ, {"GLM_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
+                mock_client.return_value.image_generate.return_value = mock_result
+                response = self.client.post(
+                    reverse("image_generate"),
+                    data='{"prompt":"a sleek app icon","model":"glm-image"}',
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["images"], [{"url": "https://example.test/glm.png"}])
+        self.assertEqual(response.json()["settings"]["provider"], "glm")
+        called_payload = mock_client.return_value.image_generate.call_args[0][1]
+        self.assertEqual(called_payload["model"], "glm-image")
+
+    def test_glm_image_edit_rejected_as_unsupported(self):
+        self.client.login(username="imager", password="TestPass123!")
+
+        with patch.dict(os.environ, {"GLM_API_KEY": "test-key"}, clear=False):
+            response = self.client.post(
+                reverse("image_edit"),
+                data='{"prompt":"make it blue","model":"glm-image","input_image":"data:image/png;base64,AAA"}',
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "This image model does not support reference-image edits")
+
     def test_image_edit_requires_input_image(self):
         self.client.login(username="imager", password="TestPass123!")
 
@@ -277,3 +332,22 @@ class NanoBananaInputTests(TestCase):
     def test_rejects_unsupported_image_types(self):
         with self.assertRaisesMessage(ValueError, "PNG, JPEG, or WebP"):
             NanoBananaClient()._parse_data_url("data:image/svg+xml;base64,PHN2Zz4=")
+
+
+class GLMProviderTests(TestCase):
+    def test_image_generate_normalizes_url_results(self):
+        client = GLMClient()
+        with patch("api_key_wrapper.gateway.providers.glm.requests.post") as mock_post:
+            mock_post.return_value.raise_for_status.return_value = None
+            mock_post.return_value.json.return_value = {"data": [{"url": "https://example.test/image.png"}]}
+
+            result = client.image_generate(
+                "glm-key",
+                {"prompt": "a clean product photo", "model": "glm-image", "aspect_ratio": "16:9"},
+            )
+
+        self.assertEqual(result.images, [{"url": "https://example.test/image.png"}])
+        call_kwargs = mock_post.call_args.kwargs
+        self.assertEqual(call_kwargs["json"]["model"], "glm-image")
+        self.assertEqual(call_kwargs["json"]["prompt"], "a clean product photo")
+        self.assertEqual(call_kwargs["json"]["size"], "1728x960")
