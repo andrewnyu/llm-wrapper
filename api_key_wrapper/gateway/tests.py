@@ -8,6 +8,7 @@ from django.urls import reverse
 from api_key_wrapper.accounts.models import TwoFactorDevice, User
 from api_key_wrapper.imaging.models import ImageJob
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult, ImageGenerationResult
+from api_key_wrapper.gateway.providers.nano_banana import NanoBananaClient
 from api_key_wrapper.usage.models import UsageEvent, UsageWallet
 
 
@@ -152,6 +153,29 @@ class ImageApiTests(TestCase):
         self.assertEqual(response.status_code, 402)
         self.assertEqual(response.json()["error"], "Insufficient credits")
 
+    def test_image_provider_failure_does_not_charge_credits(self):
+        self.client.login(username="imager", password="TestPass123!")
+        starting_balance = UsageWallet.objects.get(user=self.user).balance_credits
+
+        with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
+                mock_client.return_value.image_generate.side_effect = RuntimeError("provider down")
+                response = self.client.post(
+                    reverse("image_generate"),
+                    data='{"prompt":"a dog astronaut"}',
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 502)
+        wallet = UsageWallet.objects.get(user=self.user)
+        self.assertEqual(wallet.balance_credits, starting_balance)
+        self.assertFalse(
+            UsageEvent.objects.filter(
+                user=self.user,
+                event_type=UsageEvent.EVENT_IMAGE_CONSUME,
+            ).exists()
+        )
+
     def test_image_feedback_success_uses_default_prompt_when_missing(self):
         self.client.login(username="imager", password="TestPass123!")
 
@@ -182,3 +206,13 @@ class ImageApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "input_image is required")
+
+
+class NanoBananaInputTests(TestCase):
+    def test_rejects_remote_reference_urls(self):
+        with self.assertRaisesMessage(ValueError, "input_image must be a data URL"):
+            NanoBananaClient()._parse_data_url("http://127.0.0.1/private")
+
+    def test_rejects_unsupported_image_types(self):
+        with self.assertRaisesMessage(ValueError, "PNG, JPEG, or WebP"):
+            NanoBananaClient()._parse_data_url("data:image/svg+xml;base64,PHN2Zz4=")

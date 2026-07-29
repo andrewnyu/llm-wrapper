@@ -167,3 +167,22 @@ class ChatApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "Unsupported provider or model")
+
+    def test_streaming_provider_failure_removes_ghost_messages(self):
+        conversation = Conversation.objects.create(user=self.user, title="Failure")
+
+        def failing_stream(**kwargs):
+            raise RuntimeError("provider unavailable")
+            yield  # pragma: no cover
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.chat.views.generate_stream", side_effect=failing_stream):
+                response = self.client.post(
+                    f"/api/conversations/{conversation.id}/messages",
+                    data='{"content":"Please answer"}',
+                    content_type="application/json",
+                )
+                payload = b"".join(response.streaming_content).decode("utf-8")
+
+        self.assertIn("event: error", payload)
+        self.assertFalse(Message.objects.filter(conversation=conversation).exists())

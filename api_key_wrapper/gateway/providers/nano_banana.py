@@ -1,6 +1,5 @@
 import base64
 import os
-import requests
 
 from .base import ImageGenerationResult, ProviderClient
 
@@ -91,11 +90,9 @@ class NanoBananaClient(ProviderClient):
 
     def _parse_data_url(self, data_url):
         if not isinstance(data_url, str):
-            raise ValueError("input_image must be a data URL or http(s) URL")
-        if data_url.startswith("http://") or data_url.startswith("https://"):
-            return self._download_image(data_url)
+            raise ValueError("input_image must be a data URL")
         if not data_url.startswith("data:"):
-            raise ValueError("input_image must be a data URL or http(s) URL")
+            raise ValueError("input_image must be a data URL")
         try:
             header, encoded_data = data_url.split(",", 1)
         except ValueError as exc:
@@ -104,19 +101,17 @@ class NanoBananaClient(ProviderClient):
         mime_type = "image/png"
         if ";" in header:
             mime_type = header[5:].split(";", 1)[0] or mime_type
+        if mime_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise ValueError("input_image must be a PNG, JPEG, or WebP image")
 
         try:
-            image_bytes = base64.b64decode(encoded_data)
+            image_bytes = base64.b64decode(encoded_data, validate=True)
         except Exception as exc:
             raise ValueError("input_image contains invalid base64 data") from exc
+        if len(image_bytes) > 12 * 1024 * 1024:
+            raise ValueError("input_image is too large (12 MB maximum)")
 
         return mime_type, image_bytes
-
-    def _download_image(self, image_url):
-        response = requests.get(image_url, timeout=20)
-        response.raise_for_status()
-        mime_type = response.headers.get("Content-Type", "image/png")
-        return mime_type, response.content
 
     def _extract_images(self, response):
         images = []

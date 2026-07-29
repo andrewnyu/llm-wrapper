@@ -6,11 +6,14 @@ const state = {
   activeRequestId: null,
   autoScroll: true,
   lastFailedContent: "",
+  lastFailedMessageIds: [],
   sidebarOpen: false,
   typingMessageId: null,
   selectedProvider: "",
   selectedModel: "",
   selectedModelLabel: "",
+  streamingConversationId: null,
+  activeRequestController: null,
 };
 
 const elements = {
@@ -40,6 +43,13 @@ const API = {
 
 const DEFAULT_HINT = "Enter to send · Shift+Enter for a new line";
 
+function updateSendButton() {
+  elements.sendBtn.disabled =
+    state.streaming ||
+    !state.selectedModel ||
+    !elements.input.value.trim();
+}
+
 function getCsrfToken() {
   const fromData = elements.app?.dataset?.csrfToken;
   if (fromData) return fromData;
@@ -51,14 +61,15 @@ function getCsrfToken() {
 }
 
 async function apiFetch(url, options = {}) {
+  const { headers: optionHeaders = {}, ...fetchOptions } = options;
   return fetch(url, {
     credentials: "same-origin",
+    ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
       "X-CSRFToken": getCsrfToken(),
-      ...(options.headers || {}),
+      ...optionHeaders,
     },
-    ...options,
   });
 }
 
@@ -307,7 +318,7 @@ function selectModel(value, persist = true) {
     state.selectedModel = "";
     state.selectedModelLabel = "No model configured";
     elements.modelSwitcher.disabled = true;
-    elements.sendBtn.disabled = true;
+    updateSendButton();
     elements.modelHint.textContent = "Ask an admin to configure a provider API key";
     return;
   }
@@ -317,13 +328,15 @@ function selectModel(value, persist = true) {
   state.selectedModelLabel = option.dataset.label || option.textContent.trim();
   elements.threadSubtitle.textContent = state.selectedModelLabel;
   elements.modelHint.textContent = DEFAULT_HINT;
+  updateSendButton();
   if (persist) localStorage.setItem("chat-model", option.value);
 }
 
 function setStreaming(isStreaming) {
   state.streaming = isStreaming;
-  elements.sendBtn.disabled = isStreaming || !state.selectedModel;
+  updateSendButton();
   elements.stopBtn.classList.toggle("hidden", !isStreaming);
+  elements.stopBtn.disabled = false;
 }
 
 function nearBottom() {
@@ -354,6 +367,19 @@ function addInlineError(text, retryable = false) {
   renderMessages();
 }
 
+function removeTypingPlaceholder() {
+  if (!state.typingMessageId) return;
+  state.messages = state.messages.filter((item) => item.id !== state.typingMessageId);
+  state.typingMessageId = null;
+}
+
+function finishFailedStream() {
+  removeTypingPlaceholder();
+  state.messages.forEach((message) => {
+    if (message.streaming) message.streaming = false;
+  });
+}
+
 /* --------------------------------------------------------------------------
    Rendering
    -------------------------------------------------------------------------- */
@@ -361,7 +387,12 @@ function addInlineError(text, retryable = false) {
 function renderConversations() {
   const activeId = state.activeConversationId;
   if (!state.conversations.length) {
-    elements.conversationList.innerHTML = `<div class="muted" style="padding: 8px 10px;">No conversations yet</div>`;
+    elements.conversationList.innerHTML = `
+      <div class="conversation-empty">
+        <span aria-hidden="true">✦</span>
+        Your conversations will appear here.
+      </div>
+    `;
     return;
   }
   elements.conversationList.innerHTML = state.conversations
@@ -373,8 +404,12 @@ function renderConversations() {
             <div class="conversation-title">${escapeHtml(conversation.title)}</div>
             <div class="conversation-time">${formatRelativeTime(conversation.updatedAt)}</div>
           </button>
-          <button class="conversation-more" type="button" data-id="${conversation.id}" title="Rename" aria-label="Rename">✎</button>
-          <button class="conversation-delete" type="button" data-id="${conversation.id}" title="Delete" aria-label="Delete">🗑</button>
+          <button class="conversation-more" type="button" data-id="${conversation.id}" title="Rename" aria-label="Rename">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m4 16-1 5 5-1L19 9l-4-4zM13.5 6.5l4 4"/></svg>
+          </button>
+          <button class="conversation-delete" type="button" data-id="${conversation.id}" title="Delete" aria-label="Delete">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"/></svg>
+          </button>
         </div>
       `;
     })
@@ -453,18 +488,19 @@ function autosizeTextarea() {
   const node = elements.input;
   node.style.height = "auto";
   node.style.height = `${Math.min(node.scrollHeight, 190)}px`;
+  updateSendButton();
 }
 
 /* --------------------------------------------------------------------------
    API
    -------------------------------------------------------------------------- */
 
-async function listConversations() {
+async function listConversations(selectFallback = true) {
   const response = await apiFetch(API.conversations);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Failed to load conversations");
   state.conversations = data.items || [];
-  if (!state.activeConversationId && state.conversations.length) {
+  if (selectFallback && !state.activeConversationId && state.conversations.length) {
     state.activeConversationId = state.conversations[0].id;
   }
   renderConversations();
@@ -493,6 +529,19 @@ async function createConversation() {
   renderConversations();
   renderMessages();
   updateThreadTitle();
+}
+
+function startNewChat() {
+  state.activeConversationId = null;
+  state.messages = [];
+  state.autoScroll = true;
+  state.lastFailedContent = "";
+  state.lastFailedMessageIds = [];
+  renderConversations();
+  renderMessages();
+  updateThreadTitle();
+  elements.input.value = "";
+  autosizeTextarea();
 }
 
 async function renameConversation(conversationId) {
@@ -592,15 +641,20 @@ function finishStreamingAssistant(messageId, fullText) {
 }
 
 async function cancelStreaming() {
-  if (!state.activeRequestId) return;
-  await apiFetch(API.cancel, {
-    method: "POST",
-    body: JSON.stringify({ requestId: state.activeRequestId }),
-  });
+  elements.stopBtn.disabled = true;
+  if (state.activeRequestId) {
+    await apiFetch(API.cancel, {
+      method: "POST",
+      body: JSON.stringify({ requestId: state.activeRequestId }),
+    });
+  } else if (state.activeRequestController) {
+    state.activeRequestController.abort();
+  }
 }
 
 function parseSseChunk(buffer, onEvent) {
-  const parts = buffer.split("\n\n");
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const parts = normalized.split("\n\n");
   for (let i = 0; i < parts.length - 1; i += 1) {
     const raw = parts[i].trim();
     if (!raw) continue;
@@ -632,10 +686,12 @@ async function sendMessage() {
   }
   const conversation = getActiveConversation();
   if (!conversation) return;
+  const requestConversationId = conversation.id;
 
   state.lastFailedContent = content;
+  const userMessageId = `user-${Date.now()}`;
   state.messages.push({
-    id: `user-${Date.now()}`,
+    id: userMessageId,
     role: "user",
     content,
     createdAt: new Date().toISOString(),
@@ -646,11 +702,15 @@ async function sendMessage() {
   state.autoScroll = true;
   renderMessages();
   setStreaming(true);
+  state.streamingConversationId = requestConversationId;
+  state.activeRequestController = new AbortController();
 
   let assistantMessageId = `assistant-${Date.now()}`;
+  let sawTerminal = false;
   try {
     const response = await apiFetch(`${API.conversations}/${conversation.id}/messages`, {
       method: "POST",
+      signal: state.activeRequestController.signal,
       body: JSON.stringify({
         content,
         provider: state.selectedProvider,
@@ -677,26 +737,64 @@ async function sendMessage() {
           assistantMessageId = data.messageId || assistantMessageId;
           applyConversationTitle(conversation.id, data.title);
         } else if (eventName === "delta") {
+          if (state.activeConversationId !== requestConversationId) return;
           if (!sawDelta) {
             replaceTypingWithAssistant(assistantMessageId, "");
             sawDelta = true;
           }
           upsertStreamingAssistant(assistantMessageId, data.text || "");
         } else if (eventName === "done") {
-          finishStreamingAssistant(assistantMessageId, data.fullText || "");
+          sawTerminal = true;
+          state.lastFailedMessageIds = [];
+          if (state.activeConversationId === requestConversationId) {
+            finishStreamingAssistant(assistantMessageId, data.fullText || "");
+          }
           applyConversationTitle(conversation.id, data.title);
           state.activeRequestId = null;
         } else if (eventName === "error") {
+          sawTerminal = true;
+          state.lastFailedMessageIds = [userMessageId, assistantMessageId];
           state.activeRequestId = null;
-          addInlineError(data.message || "Generation failed", true);
+          if (state.activeConversationId === requestConversationId) {
+            finishFailedStream();
+            addInlineError(data.message || "Generation failed", true);
+          }
         }
       });
     }
-    await listConversations();
+    pending += decoder.decode();
+    if (pending.trim()) {
+      parseSseChunk(`${pending}\n\n`, (eventName, data) => {
+        if (eventName === "done") {
+          sawTerminal = true;
+          state.lastFailedMessageIds = [];
+          if (state.activeConversationId === requestConversationId) {
+            finishStreamingAssistant(assistantMessageId, data.fullText || "");
+          }
+          applyConversationTitle(conversation.id, data.title);
+        } else if (eventName === "error") {
+          sawTerminal = true;
+          state.lastFailedMessageIds = [userMessageId, assistantMessageId];
+          if (state.activeConversationId === requestConversationId) {
+            finishFailedStream();
+            addInlineError(data.message || "Generation failed", true);
+          }
+        }
+      });
+    }
+    if (!sawTerminal) throw new Error("The connection ended before the response completed");
+    await listConversations(false);
   } catch (error) {
-    addInlineError(error.message || "Network error", true);
+    if (state.activeConversationId === requestConversationId) {
+      state.lastFailedMessageIds = [userMessageId, assistantMessageId];
+      finishFailedStream();
+      const message = error.name === "AbortError" ? "Generation stopped" : error.message || "Network error";
+      addInlineError(message, error.name !== "AbortError");
+    }
   } finally {
     state.activeRequestId = null;
+    state.activeRequestController = null;
+    state.streamingConversationId = null;
     setStreaming(false);
   }
 }
@@ -707,18 +805,20 @@ async function sendMessage() {
 
 function bindEvents() {
   elements.newChatBtn.addEventListener("click", async () => {
-    try {
-      await createConversation();
-      if (window.innerWidth <= 960) setSidebarOpen(false);
-      elements.input.focus();
-    } catch (error) {
-      addInlineError(error.message || "Failed to create conversation");
-    }
+    startNewChat();
+    if (window.innerWidth <= 960) setSidebarOpen(false);
+    elements.input.focus();
   });
 
   elements.sendBtn.addEventListener("click", sendMessage);
   elements.modelSwitcher?.addEventListener("change", () => selectModel(elements.modelSwitcher.value));
-  elements.stopBtn.addEventListener("click", cancelStreaming);
+  elements.stopBtn.addEventListener("click", async () => {
+    try {
+      await cancelStreaming();
+    } catch (_error) {
+      elements.stopBtn.disabled = false;
+    }
+  });
   elements.jumpLatestBtn.addEventListener("click", () => {
     state.autoScroll = true;
     scrollToBottom(true);
@@ -733,7 +833,7 @@ function bindEvents() {
     const copyCodeBtn = event.target.closest(".copy-code-btn");
     if (copyCodeBtn) {
       const value = decodeURIComponent(copyCodeBtn.dataset.code || "");
-      await navigator.clipboard.writeText(value);
+      await copyText(value);
       copyCodeBtn.textContent = "Copied";
       setTimeout(() => {
         copyCodeBtn.textContent = "Copy";
@@ -744,7 +844,7 @@ function bindEvents() {
     const copyMessageBtn = event.target.closest(".message-copy");
     if (copyMessageBtn) {
       const value = decodeURIComponent(copyMessageBtn.dataset.copy || "");
-      await navigator.clipboard.writeText(value);
+      await copyText(value);
       copyMessageBtn.textContent = "Copied";
       setTimeout(() => {
         copyMessageBtn.textContent = "Copy";
@@ -754,6 +854,11 @@ function bindEvents() {
 
     const retryBtn = event.target.closest(".retry-btn");
     if (retryBtn) {
+      const failedIds = new Set(state.lastFailedMessageIds);
+      state.messages = state.messages.filter(
+        (message) => !failedIds.has(message.id) && !message.retryable,
+      );
+      renderMessages();
       elements.input.value = state.lastFailedContent;
       autosizeTextarea();
       await sendMessage();
@@ -806,6 +911,29 @@ function bindEvents() {
   window.addEventListener("resize", () => {
     if (window.innerWidth > 960) setSidebarOpen(false);
   });
+
+  document.querySelectorAll("[data-chat-prompt]").forEach((button) => {
+    button.addEventListener("click", () => {
+      elements.input.value = button.dataset.chatPrompt || "";
+      autosizeTextarea();
+      elements.input.focus();
+    });
+  });
+}
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const node = document.createElement("textarea");
+  node.value = value;
+  node.style.position = "fixed";
+  node.style.opacity = "0";
+  document.body.appendChild(node);
+  node.select();
+  document.execCommand("copy");
+  node.remove();
 }
 
 async function bootstrap() {
@@ -815,8 +943,8 @@ async function bootstrap() {
 
   try {
     await listConversations();
-    if (!state.activeConversationId) await createConversation();
-    else await loadMessages(state.activeConversationId);
+    if (state.activeConversationId) await loadMessages(state.activeConversationId);
+    else renderMessages();
   } catch (error) {
     addInlineError(error.message || "Failed to load chat");
   }

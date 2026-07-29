@@ -1,105 +1,119 @@
 {% extends "base.html" %}
 {% block title %}Image · API Key Wrapper{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="/static/imaging/image.css" />
+<link rel="stylesheet" href="/static/imaging/image.css?v=20260729-2" />
 {% endblock %}
 {% block layout %}
 <section class="image-page" id="image-app" data-csrf-token="{{ csrf_token }}">
-    <header class="image-header">
-        <div>
-            <h1>Image Studio</h1>
-            <p class="muted">Create, remix, and refine images with the Nano Banana family.</p>
-        </div>
-    </header>
-
-    <section class="image-feed">
-        <div id="image-thread" class="image-thread">
-            {% for job in jobs %}
-                <div class="image-message user">
-                    <div class="message-bubble user">
-                        <div class="message-role">You</div>
-                        <p class="message-text user-text">{{ job.prompt|linebreaksbr }}</p>
-                        <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
-                    </div>
-                </div>
-                <div class="image-message assistant">
-                    <div class="message-bubble assistant">
-                        <div class="assistant-head">
-                            <span class="message-role">{{ job.model_label }}</span>
-                            <span class="model-chip">{{ job.aspect_ratio }} · {{ job.image_size }}</span>
-                        </div>
-                        {% if job.result_text %}
-                            <p class="message-text">{{ job.result_text|linebreaksbr }}</p>
-                        {% endif %}
-                        {% for url in job.result_urls %}
-                            <figure class="image-card">
-                                <img src="{{ url }}" alt="Generated image" class="editable-image" />
-                                <figcaption class="image-card-actions">
-                                    <button class="image-action edit-image" type="button">Edit this</button>
-                                    <a class="image-action download-image" href="{{ url }}" download="nano-banana.png">Download</a>
-                                </figcaption>
-                            </figure>
-                        {% endfor %}
-                        {% if not job.result_text and not job.result_urls %}
-                            <p class="message-text">No content returned.</p>
-                        {% endif %}
-                        <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
-                    </div>
-                </div>
-            {% empty %}
-                <div id="image-empty" class="image-empty">
-                    <div class="empty-orbit">✦</div>
-                    <h2>What should we create?</h2>
-                    <p>Start from a prompt, upload a reference, or try one of these.</p>
-                    <div class="prompt-starters">
-                        <button type="button" data-prompt="A premium studio product photo on a clean sculptural set, soft directional lighting, editorial composition">Product shot</button>
-                        <button type="button" data-prompt="A bold cinematic poster with striking typography, dramatic lighting, and a polished campaign aesthetic">Campaign poster</button>
-                        <button type="button" data-prompt="A charming illustrated scene with expressive characters, rich texture, and a warm storybook palette">Illustration</button>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
-
-    <footer class="image-composer-wrap">
-        <div id="source-preview" class="source-preview hidden">
-            <img id="source-preview-image" alt="Selected source" />
+    <section class="image-workspace">
+        <header class="image-header">
             <div>
-                <strong>Reference ready</strong>
-                <span>Describe what you want to change</span>
+                <span class="eyebrow">Creative workspace</span>
+                <h1>Image Studio</h1>
+                <p class="muted">Generate a new image or refine one you already have.</p>
             </div>
-            <button id="clear-source" class="source-remove" type="button" aria-label="Remove source image">×</button>
-        </div>
-        <div class="image-toolbar" aria-label="Image settings">
-            <button id="pick-source" class="text-btn" type="button">＋ Add image</button>
-            <input id="source-upload" type="file" accept="image/*" class="hidden" />
-            <label class="control-chip">
-                <span>Model</span>
-                <select id="image-model">
-                    {% for item in image_models %}
-                        <option value="{{ item.model }}" {% if item.model == default_image_model %}selected{% endif %}>{{ item.label }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label class="control-chip">
-                <span>Frame</span>
-                <select id="aspect-ratio"></select>
-            </label>
-            <label class="control-chip">
-                <span>Size</span>
-                <select id="image-size"></select>
-            </label>
-            <span id="source-status" class="source-status">Generate mode</span>
-        </div>
-        <div id="image-composer" class="image-composer">
-            <textarea id="image-prompt" rows="1" placeholder="Describe the image in your imagination..." maxlength="2000"></textarea>
-            <button id="generate" class="generate-btn" type="button" aria-label="Generate image">✦</button>
-        </div>
-        <p class="drop-hint">Tip: paste or drop an image anywhere to start an edit.</p>
-        <p id="image-status" class="composer-status hidden"></p>
-    </footer>
+            <span class="studio-badge"><span aria-hidden="true">✦</span> AI image tools</span>
+        </header>
+
+        <section class="image-feed">
+            <div id="image-thread" class="image-thread" aria-live="polite">
+                {% for job in jobs %}
+                    <div class="image-message user">
+                        <div class="message-bubble user">
+                            <div class="message-role">You</div>
+                            <p class="message-text user-text">{{ job.prompt|linebreaksbr }}</p>
+                            <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
+                        </div>
+                    </div>
+                    <div class="image-message assistant">
+                        <div class="message-bubble assistant">
+                            <div class="assistant-head">
+                                <span class="assistant-avatar" aria-hidden="true">✦</span>
+                                <span class="message-role">{{ job.model_label }}</span>
+                                <span class="model-chip">{{ job.aspect_ratio }} · {{ job.image_size }}</span>
+                            </div>
+                            {% if job.result_text %}
+                                <p class="message-text">{{ job.result_text|linebreaksbr }}</p>
+                            {% endif %}
+                            {% for url in job.result_urls %}
+                                <figure class="image-card">
+                                    <img src="{{ url }}" alt="Generated image" class="editable-image" />
+                                    <figcaption class="image-card-actions">
+                                        <button class="image-action edit-image" type="button">Edit image</button>
+                                        <a class="image-action download-image" href="{{ url }}" download="generated-image.png">Download</a>
+                                    </figcaption>
+                                </figure>
+                            {% endfor %}
+                            {% if not job.result_text and not job.result_urls %}
+                                <p class="message-text">No content returned.</p>
+                            {% endif %}
+                            <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div id="image-empty" class="image-empty">
+                        <div class="empty-orbit" aria-hidden="true">✦</div>
+                        <h2>Bring an idea to life</h2>
+                        <p>Describe the result, add a reference if you have one, or start with an example.</p>
+                        <div class="prompt-starters">
+                            <button type="button" data-prompt="A premium studio product photo on a clean sculptural set, soft directional lighting, editorial composition">Product photo</button>
+                            <button type="button" data-prompt="A bold cinematic poster with striking typography, dramatic lighting, and a polished campaign aesthetic">Campaign poster</button>
+                            <button type="button" data-prompt="A charming illustrated scene with expressive characters, rich texture, and a warm storybook palette">Storybook scene</button>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <footer class="image-composer-wrap">
+            <div id="source-preview" class="source-preview hidden">
+                <img id="source-preview-image" alt="Selected source" />
+                <div>
+                    <strong>Reference ready</strong>
+                    <span>Describe what you want to change</span>
+                </div>
+                <button id="clear-source" class="source-remove" type="button" aria-label="Remove source image">×</button>
+            </div>
+            <div id="image-composer" class="image-composer-shell">
+                <div class="image-composer">
+                    <textarea id="image-prompt" rows="1" placeholder="Describe the image you want to create…" maxlength="2000"></textarea>
+                    <button id="generate" class="generate-btn" type="button" aria-label="Generate image" disabled>
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M3.4 20.4 20.85 12 3.4 3.6l-.01 6.53L15 12 3.39 13.87z"/></svg>
+                    </button>
+                </div>
+                <div class="image-toolbar" aria-label="Image settings">
+                    <button id="pick-source" class="text-btn" type="button">
+                        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                        Add image
+                    </button>
+                    <input id="source-upload" type="file" accept="image/*" class="hidden" />
+                    <label class="control-chip">
+                        <span>Model</span>
+                        <select id="image-model" aria-label="Image model">
+                            {% for item in image_models %}
+                                <option value="{{ item.model }}" {% if item.model == default_image_model %}selected{% endif %} {% if not item.configured %}disabled{% endif %}>{{ item.label }}{% if not item.configured %} · unavailable{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="control-chip">
+                        <span>Frame</span>
+                        <select id="aspect-ratio" aria-label="Aspect ratio"></select>
+                    </label>
+                    <label class="control-chip">
+                        <span>Size</span>
+                        <select id="image-size" aria-label="Image size"></select>
+                    </label>
+                    <span id="source-status" class="source-status">New image</span>
+                </div>
+            </div>
+            <div class="composer-foot">
+                <p class="drop-hint">Paste or drop an image to edit it</p>
+                <p id="image-status" class="composer-status hidden" role="status"></p>
+            </div>
+        </footer>
+    </section>
 </section>
 
 {{ image_models|json_script:"image-models-data" }}
-<script type="module" src="/static/imaging/image.js"></script>
+<script type="module" src="/static/imaging/image.js?v=20260729-2"></script>
 {% endblock %}

@@ -17,9 +17,18 @@ const imageSizeSelect = document.getElementById("image-size");
 const imageModels = JSON.parse(document.getElementById("image-models-data")?.textContent || "[]");
 
 let selectedSourceImage = null;
+let isGenerating = false;
+const MAX_SOURCE_FILE_BYTES = 12 * 1024 * 1024;
 
 function selectedModelConfig() {
   return imageModels.find((item) => item.model === modelSelect.value) || imageModels[0] || null;
+}
+
+function updateGenerateButton() {
+  const model = selectedModelConfig();
+  const canGenerate = Boolean(model?.configured && promptInput.value.trim());
+  generateButton.disabled = isGenerating || !canGenerate;
+  generateButton.setAttribute("aria-busy", isGenerating ? "true" : "false");
 }
 
 function fillSelect(select, values, preferred) {
@@ -28,12 +37,25 @@ function fillSelect(select, values, preferred) {
 }
 
 function refreshImageControls() {
-  const model = selectedModelConfig();
-  if (!model) {
-    generateButton.disabled = true;
+  let model = selectedModelConfig();
+  if (!model?.configured) {
+    const fallback = imageModels.find((item) => item.configured);
+    if (fallback) {
+      modelSelect.value = fallback.model;
+      model = fallback;
+    }
+  }
+  if (!model?.configured) {
+    modelSelect.disabled = true;
+    aspectRatioSelect.disabled = true;
+    imageSizeSelect.disabled = true;
     setStatus("No image model is configured on this server.");
+    updateGenerateButton();
     return;
   }
+  modelSelect.disabled = false;
+  aspectRatioSelect.disabled = false;
+  imageSizeSelect.disabled = false;
   fillSelect(
     aspectRatioSelect,
     model.aspect_ratios || ["1:1"],
@@ -45,6 +67,7 @@ function refreshImageControls() {
     localStorage.getItem("image-size") || imageSizeSelect.value || "1K",
   );
   localStorage.setItem("image-model", model.model);
+  updateGenerateButton();
 }
 
 function getCsrfToken() {
@@ -70,6 +93,7 @@ function setStatus(text) {
 function autosizeInput() {
   promptInput.style.height = "auto";
   promptInput.style.height = `${Math.min(promptInput.scrollHeight, 180)}px`;
+  updateGenerateButton();
 }
 
 function ensureNotEmpty() {
@@ -147,6 +171,12 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
   const head = document.createElement("div");
   head.className = "assistant-head";
 
+  const avatar = document.createElement("span");
+  avatar.className = "assistant-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = "✦";
+  head.appendChild(avatar);
+
   const role = document.createElement("span");
   role.className = "message-role";
   role.textContent = settings.model_label || selectedModelConfig()?.label || "Nano Banana";
@@ -193,7 +223,7 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
     actions.className = "image-card-actions";
     actions.innerHTML = `
       <button class="image-action edit-image" type="button">Edit this</button>
-      <a class="image-action download-image" download="nano-banana.png">Download</a>
+      <a class="image-action download-image" download="generated-image.png">Download</a>
     `;
     actions.querySelector(".download-image").href = imageSrc;
     card.appendChild(actions);
@@ -237,12 +267,12 @@ function setSelectedSource(src, sourceType = "selected") {
   selectedSourceImage = src || null;
   if (selectedSourceImage) {
     generateButton.title = "Edit selected image";
-    sourceStatus.textContent = sourceType === "upload" ? "Editing uploaded image" : "Editing selected image";
+    sourceStatus.textContent = sourceType === "upload" ? "Uploaded reference" : "Selected reference";
     sourcePreviewImage.src = selectedSourceImage;
     sourcePreview.classList.remove("hidden");
   } else {
     generateButton.title = "Generate image";
-    sourceStatus.textContent = "Generate mode";
+    sourceStatus.textContent = "New image";
     sourcePreviewImage.removeAttribute("src");
     sourcePreview.classList.add("hidden");
     clearSelectedCard();
@@ -279,9 +309,13 @@ function formatRequestError(response, data) {
 
 async function runImageRequest() {
   const prompt = promptInput.value.trim();
-  if (!prompt || generateButton.disabled) return;
+  if (!prompt || isGenerating || !selectedModelConfig()?.configured) {
+    promptInput.focus();
+    return;
+  }
 
-  generateButton.disabled = true;
+  isGenerating = true;
+  updateGenerateButton();
   const isEdit = Boolean(selectedSourceImage);
   const requestSource = isEdit ? selectedSourceImage : null;
   const requestSettings = {
@@ -316,8 +350,8 @@ async function runImageRequest() {
       return;
     }
 
-    const images = (data.images || [])
-      .map((image) => image.url || image.base64)
+    const images = (Array.isArray(data.images) ? data.images : [])
+      .map((image) => (typeof image === "string" ? image : image?.url || image?.base64))
       .filter(Boolean);
     pendingBubble.remove();
     addAssistantBubble({ text: data.text || "", images, settings: data.settings || requestSettings });
@@ -338,7 +372,8 @@ async function runImageRequest() {
     addErrorBubble("Network error. Please retry.");
     setStatus("Network error. Please retry.");
   } finally {
-    generateButton.disabled = false;
+    isGenerating = false;
+    updateGenerateButton();
   }
 }
 
@@ -354,6 +389,10 @@ function loadSourceFile(file) {
   if (!file) return;
   if (!file.type.startsWith("image/")) {
     setStatus("Please choose an image file.");
+    return;
+  }
+  if (file.size > MAX_SOURCE_FILE_BYTES) {
+    setStatus("That image is too large. Choose a file under 12 MB.");
     return;
   }
   const reader = new FileReader();
@@ -450,9 +489,12 @@ document.addEventListener("drop", (event) => {
   imageComposer.classList.remove("drag-active");
   loadSourceFile(file);
 });
+document.addEventListener("dragend", () => imageComposer.classList.remove("drag-active"));
 
 const savedModel = localStorage.getItem("image-model");
-if (savedModel && imageModels.some((item) => item.model === savedModel)) modelSelect.value = savedModel;
+if (savedModel && imageModels.some((item) => item.model === savedModel && item.configured)) {
+  modelSelect.value = savedModel;
+}
 refreshImageControls();
 autosizeInput();
 scrollToLatestImage();

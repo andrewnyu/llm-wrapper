@@ -49,7 +49,8 @@ def _json_insufficient(required_credits, remaining_credits):
 
 def _parse_json(request):
     try:
-        return json.loads(request.body.decode("utf-8")) if request.body else {}
+        payload = json.loads(request.body.decode("utf-8")) if request.body else {}
+        return payload if isinstance(payload, dict) else None
     except json.JSONDecodeError:
         return None
 
@@ -194,7 +195,7 @@ def conversation_messages_view(request, conversation_id):
         return _json_error(f"{model_choice['label']} is not configured on this server", status=403)
 
     is_first_message = not conversation.messages.exists()
-    Message.objects.create(
+    user_message = Message.objects.create(
         conversation=conversation,
         role=Message.ROLE_USER,
         content=content,
@@ -224,6 +225,7 @@ def conversation_messages_view(request, conversation_id):
 
     def event_stream():
         assistant_text = ""
+        usage_charged = False
         try:
             yield _sse(
                 "meta",
@@ -272,8 +274,10 @@ def conversation_messages_view(request, conversation_id):
                     reference_id=str(conversation.id),
                     metadata={"provider": provider, "model": model, "source": "chat_stream"},
                 )
+                usage_charged = True
                 token_count = _usage_event.unit_count
             except InsufficientCreditsError:
+                Message.objects.filter(id__in=[user_message.id, assistant_message.id]).delete()
                 fresh_wallet = get_or_create_wallet(request.user)
                 required_tokens = estimate_tokens_from_text(input_text, final_text)
                 required = credits_for_text_tokens(required_tokens)
@@ -303,8 +307,11 @@ def conversation_messages_view(request, conversation_id):
             )
         except Exception:
             logger.exception("Chat generation failed")
-            assistant_message.content = assistant_text
-            assistant_message.save(update_fields=["content"])
+            if usage_charged and assistant_text:
+                assistant_message.content = assistant_text
+                assistant_message.save(update_fields=["content"])
+            else:
+                Message.objects.filter(id__in=[user_message.id, assistant_message.id]).delete()
             yield _sse("error", {"message": "Failed to generate response"})
         finally:
             with _ACTIVE_LOCK:

@@ -161,10 +161,12 @@ SESSION_COOKIE_SECURE = os.environ.get("DJANGO_SESSION_COOKIE_SECURE", "0") == "
 CSRF_COOKIE_SECURE = os.environ.get("DJANGO_CSRF_COOKIE_SECURE", "0") == "1"
 
 API_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("API_REQUEST_TIMEOUT_SECONDS", "20"))
+# Reference edits send images as base64 JSON. Keep enough headroom for a
+# 12 MB source plus JSON/base64 overhead while still rejecting runaway bodies.
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("DATA_UPLOAD_MAX_MEMORY_SIZE", str(32 * 1024 * 1024)))
 
 DEFAULT_SIGNUP_CREDITS = os.environ.get("DEFAULT_SIGNUP_CREDITS", "10.0000")
 
 USAGE_IMAGE_REQUEST_CREDITS = os.environ.get("USAGE_IMAGE_REQUEST_CREDITS", "1.0")
 USAGE_TEXT_CREDITS_PER_1K_TOKENS = os.environ.get("USAGE_TEXT_CREDITS_PER_1K_TOKENS", "0.25")
 USAGE_ESTIMATED_CHARS_PER_TOKEN = int(os.environ.get("USAGE_ESTIMATED_CHARS_PER_TOKEN", "4"))
-

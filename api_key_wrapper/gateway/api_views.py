@@ -14,6 +14,7 @@ from api_key_wrapper.usage.services import (
     estimate_tokens_from_text,
     extract_token_usage,
     get_or_create_wallet,
+    image_request_credits,
 )
 
 from .key_resolver import get_api_key_for_provider
@@ -32,19 +33,29 @@ DEFAULT_IMAGE_FEEDBACK_PROMPT = (
     "(2) Spelling/text issues you can read, with suggested corrections. "
     "(3) Practical feedback and improvements."
 )
+MAX_IMAGE_PROMPT_CHARS = 2000
 
 
 def _image_options(payload):
-    model_id = (payload.get("model") or DEFAULT_IMAGE_MODEL).strip()
+    model_id = payload.get("model") or DEFAULT_IMAGE_MODEL
+    if not isinstance(model_id, str):
+        return None, _json_error("model must be a string")
+    model_id = model_id.strip()
     model = get_image_model(model_id)
     if not model:
         return None, _json_error("Unsupported image model")
 
-    aspect_ratio = (payload.get("aspect_ratio") or DEFAULT_IMAGE_ASPECT_RATIO).strip()
+    aspect_ratio = payload.get("aspect_ratio") or DEFAULT_IMAGE_ASPECT_RATIO
+    if not isinstance(aspect_ratio, str):
+        return None, _json_error("aspect_ratio must be a string")
+    aspect_ratio = aspect_ratio.strip()
     if aspect_ratio not in model["aspect_ratios"]:
         return None, _json_error("Unsupported aspect ratio for this image model")
 
-    image_size = (payload.get("image_size") or DEFAULT_IMAGE_RESOLUTION).strip().upper()
+    image_size = payload.get("image_size") or DEFAULT_IMAGE_RESOLUTION
+    if not isinstance(image_size, str):
+        return None, _json_error("image_size must be a string")
+    image_size = image_size.strip().upper()
     if image_size not in model["resolutions"]:
         return None, _json_error("Unsupported resolution for this image model")
 
@@ -72,9 +83,20 @@ def _json_insufficient(required_credits, remaining_credits):
     )
 
 
+def _check_image_credits(user):
+    wallet = get_or_create_wallet(user)
+    required = image_request_credits()
+    if wallet.balance_credits < required:
+        return _json_insufficient(required, wallet.balance_credits)
+    return None
+
+
 def _parse_json_payload(request):
     try:
-        return json.loads(request.body.decode("utf-8")), None
+        payload = json.loads(request.body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None, _json_error("JSON body must be an object")
+        return payload, None
     except RequestDataTooBig:
         return None, _json_error("Upload too large. Please use a smaller image.", status=413)
     except json.JSONDecodeError:
@@ -203,22 +225,19 @@ def image_generate(request):
         return payload_error
 
     prompt = payload.get("prompt")
-    if not prompt:
+    if not isinstance(prompt, str) or not prompt.strip():
         return _json_error("prompt is required")
+    prompt = prompt.strip()
+    if len(prompt) > MAX_IMAGE_PROMPT_CHARS:
+        return _json_error(f"prompt exceeds max length ({MAX_IMAGE_PROMPT_CHARS})")
     options, options_error = _image_options(payload)
     if options_error:
         return options_error
     provider = options["provider"]
 
-    try:
-        wallet, _usage_event, charged_credits = charge_image_request(
-            user=request.user,
-            feature="image_generate",
-            metadata={**options, "source": "gateway_api"},
-        )
-    except InsufficientCreditsError:
-        fresh_wallet = get_or_create_wallet(request.user)
-        return _json_insufficient("1.0000", fresh_wallet.balance_credits)
+    credit_error = _check_image_credits(request.user)
+    if credit_error:
+        return credit_error
 
     try:
         api_key = get_api_key_for_provider(provider)
@@ -241,6 +260,16 @@ def image_generate(request):
         if settings.DEBUG:
             return _json_error(f"{message}: {exc}", status=502)
         return _json_error(message, status=502)
+
+    try:
+        wallet, _usage_event, charged_credits = charge_image_request(
+            user=request.user,
+            feature="image_generate",
+            metadata={**options, "source": "gateway_api"},
+        )
+    except InsufficientCreditsError:
+        fresh_wallet = get_or_create_wallet(request.user)
+        return _json_insufficient(image_request_credits(), fresh_wallet.balance_credits)
 
     result_text = (result.text or "").strip()
     job = ImageJob.objects.create(
@@ -281,24 +310,21 @@ def image_edit(request):
 
     prompt = payload.get("prompt")
     input_image = payload.get("input_image")
-    if not prompt:
+    if not isinstance(prompt, str) or not prompt.strip():
         return _json_error("prompt is required")
-    if not input_image:
+    prompt = prompt.strip()
+    if len(prompt) > MAX_IMAGE_PROMPT_CHARS:
+        return _json_error(f"prompt exceeds max length ({MAX_IMAGE_PROMPT_CHARS})")
+    if not isinstance(input_image, str) or not input_image:
         return _json_error("input_image is required")
     options, options_error = _image_options(payload)
     if options_error:
         return options_error
     provider = options["provider"]
 
-    try:
-        wallet, _usage_event, charged_credits = charge_image_request(
-            user=request.user,
-            feature="image_edit",
-            metadata={**options, "source": "gateway_api"},
-        )
-    except InsufficientCreditsError:
-        fresh_wallet = get_or_create_wallet(request.user)
-        return _json_insufficient("1.0000", fresh_wallet.balance_credits)
+    credit_error = _check_image_credits(request.user)
+    if credit_error:
+        return credit_error
 
     try:
         api_key = get_api_key_for_provider(provider)
@@ -324,6 +350,16 @@ def image_edit(request):
         if settings.DEBUG:
             return _json_error(f"{message}: {exc}", status=502)
         return _json_error(message, status=502)
+
+    try:
+        wallet, _usage_event, charged_credits = charge_image_request(
+            user=request.user,
+            feature="image_edit",
+            metadata={**options, "source": "gateway_api"},
+        )
+    except InsufficientCreditsError:
+        fresh_wallet = get_or_create_wallet(request.user)
+        return _json_insufficient(image_request_credits(), fresh_wallet.balance_credits)
 
     result_text = (result.text or "").strip()
     job = ImageJob.objects.create(
@@ -362,24 +398,23 @@ def image_feedback(request):
     if payload_error:
         return payload_error
 
-    prompt = (payload.get("prompt") or "").strip()
+    raw_prompt = payload.get("prompt") or ""
+    if not isinstance(raw_prompt, str):
+        return _json_error("prompt must be a string")
+    prompt = raw_prompt.strip()
+    if len(prompt) > MAX_IMAGE_PROMPT_CHARS:
+        return _json_error(f"prompt exceeds max length ({MAX_IMAGE_PROMPT_CHARS})")
     input_image = payload.get("input_image")
     provider = "nano_banana"
 
-    if not input_image:
+    if not isinstance(input_image, str) or not input_image:
         return _json_error("input_image is required")
 
     final_prompt = prompt or DEFAULT_IMAGE_FEEDBACK_PROMPT
 
-    try:
-        wallet, _usage_event, charged_credits = charge_image_request(
-            user=request.user,
-            feature="image_feedback",
-            metadata={"provider": provider, "source": "gateway_api"},
-        )
-    except InsufficientCreditsError:
-        fresh_wallet = get_or_create_wallet(request.user)
-        return _json_insufficient("1.0000", fresh_wallet.balance_credits)
+    credit_error = _check_image_credits(request.user)
+    if credit_error:
+        return credit_error
 
     try:
         api_key = get_api_key_for_provider(provider)
@@ -404,6 +439,16 @@ def image_feedback(request):
         if settings.DEBUG:
             return _json_error(f"{message}: {exc}", status=502)
         return _json_error(message, status=502)
+
+    try:
+        wallet, _usage_event, charged_credits = charge_image_request(
+            user=request.user,
+            feature="image_feedback",
+            metadata={"provider": provider, "source": "gateway_api"},
+        )
+    except InsufficientCreditsError:
+        fresh_wallet = get_or_create_wallet(request.user)
+        return _json_insufficient(image_request_credits(), fresh_wallet.balance_credits)
 
     result_text = (result.text or "").strip()
     job = ImageJob.objects.create(
