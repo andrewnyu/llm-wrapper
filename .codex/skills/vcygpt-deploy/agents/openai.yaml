@@ -1,0 +1,4 @@
+interface:
+  display_name: "VCY GPT Deploy"
+  short_description: "Deploy and verify chat.vcygpt.org"
+  default_prompt: "Use $vcygpt-deploy to verify and restart the VCY GPT deployment."

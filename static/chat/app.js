@@ -28,6 +28,9 @@ const elements = {
   threadTitle: document.getElementById("thread-title"),
   threadSubtitle: document.getElementById("thread-subtitle"),
   modelSwitcher: document.getElementById("model-switcher"),
+  modelPickerBtn: document.getElementById("model-picker-btn"),
+  modelPickerLabel: document.getElementById("model-picker-label"),
+  modelPickerMenu: document.getElementById("model-picker-menu"),
   modelHint: document.getElementById("model-hint"),
   newChatBtn: document.getElementById("new-chat-btn"),
   sendBtn: document.getElementById("send-btn"),
@@ -106,6 +109,69 @@ function modelLabelForId(modelId) {
     (item) => item.dataset.model === modelId,
   );
   return option?.dataset.label || modelId;
+}
+
+function providerLabel(provider) {
+  return (provider || "provider")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function modelOptions() {
+  return Array.from(elements.modelSwitcher?.options || []);
+}
+
+function setModelPickerOpen(isOpen) {
+  if (!elements.modelPickerBtn || !elements.modelPickerMenu) return;
+  elements.modelPickerMenu.classList.toggle("hidden", !isOpen);
+  elements.modelPickerBtn.setAttribute("aria-expanded", String(isOpen));
+}
+
+function syncModelPickerSelection() {
+  if (!elements.modelPickerLabel) return;
+  elements.modelPickerLabel.textContent = state.selectedModelLabel || "Select model";
+  elements.modelPickerBtn.disabled = !state.selectedModel;
+  elements.modelPickerMenu?.querySelectorAll(".model-picker-option").forEach((button) => {
+    const selected = button.dataset.value === elements.modelSwitcher?.value;
+    button.setAttribute("aria-selected", String(selected));
+    const check = button.querySelector(".model-picker-check");
+    if (check) check.innerHTML = selected ? "✓" : "";
+  });
+}
+
+function renderModelPicker() {
+  if (!elements.modelPickerMenu) return;
+  const groups = modelOptions().reduce((acc, option) => {
+    const provider = option.dataset.provider || "other";
+    if (!acc.has(provider)) acc.set(provider, []);
+    acc.get(provider).push(option);
+    return acc;
+  }, new Map());
+
+  elements.modelPickerMenu.innerHTML = Array.from(groups.entries())
+    .map(([provider, options]) => {
+      const buttons = options
+        .map((option) => {
+          const unavailable = option.disabled ? "Unavailable" : providerLabel(option.dataset.provider);
+          return `
+            <button
+              class="model-picker-option"
+              type="button"
+              role="option"
+              data-value="${escapeHtml(option.value)}"
+              aria-selected="false"
+              ${option.disabled ? "disabled" : ""}
+            >
+              <span class="model-picker-name">${escapeHtml(option.dataset.label || option.textContent.trim())}</span>
+              <span class="model-picker-check" aria-hidden="true"></span>
+              <span class="model-picker-provider">${escapeHtml(unavailable)}</span>
+            </button>
+          `;
+        })
+        .join("");
+      return `<div class="model-picker-title">${escapeHtml(providerLabel(provider))}</div>${buttons}`;
+    })
+    .join("");
 }
 
 /* --------------------------------------------------------------------------
@@ -310,14 +376,16 @@ function applyConversationTitle(conversationId, title) {
 }
 
 function selectModel(value, persist = true) {
-  const option = Array.from(elements.modelSwitcher?.options || []).find(
+  const option = modelOptions().find(
     (item) => item.value === value && !item.disabled,
-  ) || Array.from(elements.modelSwitcher?.options || []).find((item) => !item.disabled);
+  ) || modelOptions().find((item) => !item.disabled);
   if (!option) {
     state.selectedProvider = "";
     state.selectedModel = "";
     state.selectedModelLabel = "No model configured";
     elements.modelSwitcher.disabled = true;
+    elements.modelPickerBtn.disabled = true;
+    syncModelPickerSelection();
     updateSendButton();
     elements.modelHint.textContent = "Ask an admin to configure a provider API key";
     return;
@@ -328,6 +396,7 @@ function selectModel(value, persist = true) {
   state.selectedModelLabel = option.dataset.label || option.textContent.trim();
   elements.threadSubtitle.textContent = state.selectedModelLabel;
   elements.modelHint.textContent = DEFAULT_HINT;
+  syncModelPickerSelection();
   updateSendButton();
   if (persist) localStorage.setItem("chat-model", option.value);
 }
@@ -812,6 +881,25 @@ function bindEvents() {
 
   elements.sendBtn.addEventListener("click", sendMessage);
   elements.modelSwitcher?.addEventListener("change", () => selectModel(elements.modelSwitcher.value));
+  elements.modelPickerBtn?.addEventListener("click", () => {
+    const isOpen = elements.modelPickerBtn.getAttribute("aria-expanded") === "true";
+    setModelPickerOpen(!isOpen);
+  });
+  elements.modelPickerMenu?.addEventListener("click", (event) => {
+    const option = event.target.closest(".model-picker-option");
+    if (!option || option.disabled) return;
+    selectModel(option.dataset.value);
+    setModelPickerOpen(false);
+    elements.input.focus();
+  });
+  document.addEventListener("click", (event) => {
+    if (!elements.modelPickerMenu || elements.modelPickerMenu.classList.contains("hidden")) return;
+    if (event.target.closest(".model-switcher-wrap")) return;
+    setModelPickerOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setModelPickerOpen(false);
+  });
   elements.stopBtn.addEventListener("click", async () => {
     try {
       await cancelStreaming();
@@ -937,6 +1025,7 @@ async function copyText(value) {
 }
 
 async function bootstrap() {
+  renderModelPicker();
   bindEvents();
   autosizeTextarea();
   selectModel(localStorage.getItem("chat-model") || elements.modelSwitcher?.value || "", false);
