@@ -1,9 +1,14 @@
+const KIND = "studio";
+const API = {
+  conversations: `/api/image/conversations?kind=${KIND}`,
+  conversationBase: "/api/image/conversations",
+};
+
 const app = document.getElementById("image-app");
 const promptInput = document.getElementById("image-prompt");
 const generateButton = document.getElementById("generate");
 const imageThread = document.getElementById("image-thread");
 const imageStatus = document.getElementById("image-status");
-const emptyState = document.getElementById("image-empty");
 const pickSourceButton = document.getElementById("pick-source");
 const clearSourceButton = document.getElementById("clear-source");
 const sourceStatus = document.getElementById("source-status");
@@ -14,7 +19,19 @@ const imageComposer = document.getElementById("image-composer");
 const modelSelect = document.getElementById("image-model");
 const aspectRatioSelect = document.getElementById("aspect-ratio");
 const imageSizeSelect = document.getElementById("image-size");
+const chatTitle = document.getElementById("image-chat-title");
+const newChatButton = document.getElementById("new-image-chat");
+const conversationList = document.getElementById("image-conversation-list");
 const imageModels = JSON.parse(document.getElementById("image-models-data")?.textContent || "[]");
+
+const state = {
+  conversations: [],
+  activeConversationId: null,
+  hasMoreJobs: false,
+  oldestJobCursor: null,
+  loadingJobs: false,
+  loadingConversations: false,
+};
 
 let selectedSourceImage = null;
 let isGenerating = false;
@@ -60,16 +77,8 @@ function refreshImageControls() {
   modelSelect.disabled = false;
   aspectRatioSelect.disabled = false;
   imageSizeSelect.disabled = false;
-  fillSelect(
-    aspectRatioSelect,
-    model.aspect_ratios || ["1:1"],
-    localStorage.getItem("image-aspect-ratio") || aspectRatioSelect.value || "1:1",
-  );
-  fillSelect(
-    imageSizeSelect,
-    model.resolutions || ["1K"],
-    localStorage.getItem("image-size") || imageSizeSelect.value || "1K",
-  );
+  fillSelect(aspectRatioSelect, model.aspect_ratios || ["1:1"], localStorage.getItem("image-aspect-ratio") || aspectRatioSelect.value || "1:1");
+  fillSelect(imageSizeSelect, model.resolutions || ["1K"], localStorage.getItem("image-size") || imageSizeSelect.value || "1K");
   localStorage.setItem("image-model", model.model);
   if (selectedSourceImage) setSelectedSource(selectedSourceImage);
   if (selectedSourceImage && !selectedModelSupportsEdit()) {
@@ -88,6 +97,18 @@ function getCsrfToken() {
   return cookie ? decodeURIComponent(cookie.split("=")[1]) : "";
 }
 
+async function apiFetch(url, options = {}) {
+  return fetch(url, {
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCsrfToken(),
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+}
+
 function setStatus(text) {
   if (!text) {
     imageStatus.textContent = "";
@@ -104,29 +125,56 @@ function autosizeInput() {
   updateGenerateButton();
 }
 
+function emptyMarkup() {
+  return `
+    <div id="image-empty" class="image-empty">
+      <div class="empty-orbit" aria-hidden="true">✦</div>
+      <h2>Bring an idea to life</h2>
+      <p>Describe the result, add a reference if you have one, or start with an example.</p>
+      <div class="prompt-starters">
+        <button type="button" data-prompt="A premium studio product photo on a clean sculptural set, soft directional lighting, editorial composition">Product photo</button>
+        <button type="button" data-prompt="A bold cinematic poster with striking typography, dramatic lighting, and a polished campaign aesthetic">Campaign poster</button>
+        <button type="button" data-prompt="A charming illustrated scene with expressive characters, rich texture, and a warm storybook palette">Storybook scene</button>
+      </div>
+    </div>
+  `;
+}
+
+function resetThread() {
+  imageThread.innerHTML = emptyMarkup();
+  bindPromptStarters();
+  state.hasMoreJobs = false;
+  state.oldestJobCursor = null;
+}
+
 function ensureNotEmpty() {
-  if (emptyState) {
-    emptyState.remove();
-  }
+  document.getElementById("image-empty")?.remove();
 }
 
 function scrollToLatestImage() {
   imageThread.scrollTop = imageThread.scrollHeight;
 }
 
-function formatNow() {
-  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function formatTime(value = null) {
+  const date = value ? new Date(value) : new Date();
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function buildMessageMeta() {
+function formatConversationTime(value) {
+  const date = new Date(value);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return formatTime(value);
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function buildMessageMeta(value = null) {
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  meta.textContent = formatNow();
+  meta.textContent = formatTime(value);
   return meta;
 }
 
-function addUserBubble(prompt, sourceImage = null) {
-  ensureNotEmpty();
+function buildUserBubble(prompt, sourceImage = null, createdAt = null) {
   const message = document.createElement("div");
   message.className = "image-message user";
 
@@ -146,30 +194,23 @@ function addUserBubble(prompt, sourceImage = null) {
   if (sourceImage) {
     const sourceWrap = document.createElement("div");
     sourceWrap.className = "message-source-wrap";
-
     const sourceLabel = document.createElement("span");
     sourceLabel.className = "source-chip";
     sourceLabel.textContent = "Source image";
-
     const sourcePreview = document.createElement("img");
     sourcePreview.className = "message-source-thumb";
     sourcePreview.src = sourceImage;
     sourcePreview.alt = "Source image preview";
-
-    sourceWrap.appendChild(sourceLabel);
-    sourceWrap.appendChild(sourcePreview);
+    sourceWrap.append(sourceLabel, sourcePreview);
     bubble.appendChild(sourceWrap);
   }
 
-  bubble.appendChild(buildMessageMeta());
-
+  bubble.appendChild(buildMessageMeta(createdAt));
   message.appendChild(bubble);
-  imageThread.appendChild(message);
-  scrollToLatestImage();
+  return message;
 }
 
-function addAssistantBubble({ text = "", images = [], pending = false, settings = {} } = {}) {
-  ensureNotEmpty();
+function buildAssistantBubble({ text = "", images = [], pending = false, settings = {}, createdAt = null } = {}) {
   const message = document.createElement("div");
   message.className = "image-message assistant";
 
@@ -178,23 +219,17 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
 
   const head = document.createElement("div");
   head.className = "assistant-head";
-
   const avatar = document.createElement("span");
   avatar.className = "assistant-avatar";
   avatar.setAttribute("aria-hidden", "true");
   avatar.textContent = "✦";
-  head.appendChild(avatar);
-
   const role = document.createElement("span");
   role.className = "message-role";
-  role.textContent = settings.model_label || selectedModelConfig()?.label || "Nano Banana";
-  head.appendChild(role);
-
+  role.textContent = settings.model_label || selectedModelConfig()?.label || "Image model";
   const model = document.createElement("span");
   model.className = "model-chip";
   model.textContent = `${settings.aspect_ratio || aspectRatioSelect.value} · ${settings.image_size || imageSizeSelect.value}`;
-  head.appendChild(model);
-
+  head.append(avatar, role, model);
   bubble.appendChild(head);
 
   if (pending) {
@@ -202,10 +237,8 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
     typing.className = "typing-indicator";
     typing.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
     bubble.appendChild(typing);
-    bubble.appendChild(buildMessageMeta());
+    bubble.appendChild(buildMessageMeta(createdAt));
     message.appendChild(bubble);
-    imageThread.appendChild(message);
-    scrollToLatestImage();
     return message;
   }
 
@@ -220,13 +253,10 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
   images.forEach((imageSrc) => {
     const card = document.createElement("figure");
     card.className = "image-card";
-
     const img = document.createElement("img");
     img.src = imageSrc;
     img.alt = "Generated image";
     img.className = "editable-image";
-    card.appendChild(img);
-
     const actions = document.createElement("figcaption");
     actions.className = "image-card-actions";
     actions.innerHTML = `
@@ -234,7 +264,7 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
       <a class="image-action download-image" download="generated-image.png">Download</a>
     `;
     actions.querySelector(".download-image").href = imageSrc;
-    card.appendChild(actions);
+    card.append(img, actions);
     bubble.appendChild(card);
   });
 
@@ -245,49 +275,153 @@ function addAssistantBubble({ text = "", images = [], pending = false, settings 
     bubble.appendChild(fallback);
   }
 
-  bubble.appendChild(buildMessageMeta());
+  bubble.appendChild(buildMessageMeta(createdAt));
   message.appendChild(bubble);
-  imageThread.appendChild(message);
-  scrollToLatestImage();
   return message;
+}
+
+function appendUserBubble(prompt, sourceImage = null) {
+  ensureNotEmpty();
+  imageThread.appendChild(buildUserBubble(prompt, sourceImage));
+  scrollToLatestImage();
+}
+
+function appendAssistantBubble(payload = {}) {
+  ensureNotEmpty();
+  const node = buildAssistantBubble(payload);
+  imageThread.appendChild(node);
+  scrollToLatestImage();
+  return node;
 }
 
 function addErrorBubble(messageText) {
   const message = document.createElement("div");
   message.className = "image-message assistant";
-
   const bubble = document.createElement("div");
   bubble.className = "message-bubble assistant error";
   bubble.textContent = messageText;
   message.appendChild(bubble);
-
   imageThread.appendChild(message);
   scrollToLatestImage();
 }
 
-function clearSelectedCard() {
-  document.querySelectorAll(".image-card.selected").forEach((card) => {
-    card.classList.remove("selected");
+function renderJob(job, { prepend = false } = {}) {
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(buildUserBubble(job.prompt, null, job.createdAt));
+  fragment.appendChild(
+    buildAssistantBubble({
+      text: job.text || "",
+      images: job.resultUrls || [],
+      settings: job.settings || {},
+      createdAt: job.createdAt,
+    }),
+  );
+  ensureNotEmpty();
+  if (prepend) imageThread.prepend(fragment);
+  else imageThread.appendChild(fragment);
+}
+
+function renderConversations() {
+  if (!state.conversations.length) {
+    conversationList.innerHTML = '<p class="image-list-hint">No saved image chats yet.</p>';
+    return;
+  }
+  conversationList.innerHTML = "";
+  state.conversations.forEach((conversation) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `image-conversation-item${conversation.id === state.activeConversationId ? " active" : ""}`;
+    button.dataset.conversationId = conversation.id;
+    button.innerHTML = `
+      <span>
+        <span class="image-conversation-title"></span>
+        <span class="image-conversation-time">${formatConversationTime(conversation.updatedAt)}</span>
+      </span>
+      <span class="image-conversation-menu" aria-hidden="true">›</span>
+    `;
+    button.querySelector(".image-conversation-title").textContent = conversation.title;
+    conversationList.appendChild(button);
   });
 }
 
-function setSelectedSource(src, sourceType = "selected") {
-  selectedSourceImage = src || null;
-  if (selectedSourceImage) {
-    const supportsEdit = selectedModelSupportsEdit();
-    generateButton.title = supportsEdit ? "Edit selected image" : "Selected model does not support reference edits";
-    sourceStatus.textContent = supportsEdit
-      ? sourceType === "upload" ? "Uploaded reference" : "Selected reference"
-      : "Reference not supported";
-    sourcePreviewImage.src = selectedSourceImage;
-    sourcePreview.classList.remove("hidden");
-  } else {
-    generateButton.title = "Generate image";
-    sourceStatus.textContent = "New image";
-    sourcePreviewImage.removeAttribute("src");
-    sourcePreview.classList.add("hidden");
-    clearSelectedCard();
+function upsertConversation(conversation) {
+  if (!conversation) return;
+  state.conversations = state.conversations.filter((item) => item.id !== conversation.id);
+  state.conversations.unshift(conversation);
+  state.activeConversationId = conversation.id;
+  chatTitle.textContent = conversation.title || "Image Studio";
+  renderConversations();
+}
+
+async function loadConversations() {
+  state.loadingConversations = true;
+  try {
+    const response = await apiFetch(API.conversations, { method: "GET" });
+    const data = await parseApiResponse(response);
+    if (!response.ok) throw new Error(data.error || "Failed to load chats");
+    state.conversations = data.items || [];
+    renderConversations();
+  } catch (_error) {
+    conversationList.innerHTML = '<p class="image-list-hint">Could not load chats.</p>';
+  } finally {
+    state.loadingConversations = false;
   }
+}
+
+async function loadConversationJobs(conversationId, { prepend = false } = {}) {
+  if (!conversationId || state.loadingJobs) return;
+  state.loadingJobs = true;
+  const previousHeight = imageThread.scrollHeight;
+  let loader = null;
+  if (prepend) {
+    loader = document.createElement("div");
+    loader.className = "history-loader";
+    loader.textContent = "Loading earlier…";
+    imageThread.prepend(loader);
+  }
+  try {
+    const cursor = prepend && state.oldestJobCursor ? `&before=${encodeURIComponent(state.oldestJobCursor)}` : "";
+    const response = await apiFetch(`${API.conversationBase}/${conversationId}/jobs?limit=12${cursor}`, { method: "GET" });
+    const data = await parseApiResponse(response);
+    if (!response.ok) throw new Error(data.error || "Failed to load messages");
+    loader?.remove();
+    if (!prepend) imageThread.innerHTML = "";
+    const items = data.items || [];
+    if (!items.length && !prepend) resetThread();
+    const renderItems = prepend ? [...items].reverse() : items;
+    renderItems.forEach((job) => renderJob(job, { prepend }));
+    state.hasMoreJobs = Boolean(data.hasMore);
+    state.oldestJobCursor = items[0]?.createdAt || state.oldestJobCursor;
+    if (prepend) imageThread.scrollTop = imageThread.scrollHeight - previousHeight;
+    else scrollToLatestImage();
+  } catch (_error) {
+    loader?.remove();
+    if (!prepend) {
+      resetThread();
+      setStatus("Could not load this image chat.");
+    }
+  } finally {
+    state.loadingJobs = false;
+  }
+}
+
+function startNewChat() {
+  state.activeConversationId = null;
+  chatTitle.textContent = "Image Studio";
+  resetThread();
+  setSelectedSource(null);
+  renderConversations();
+  promptInput.focus();
+}
+
+function selectConversation(conversationId) {
+  const conversation = state.conversations.find((item) => item.id === conversationId);
+  if (!conversation) return;
+  state.activeConversationId = conversation.id;
+  chatTitle.textContent = conversation.title || "Image Studio";
+  renderConversations();
+  resetThread();
+  loadConversationJobs(conversation.id);
 }
 
 async function parseApiResponse(response) {
@@ -339,22 +473,17 @@ async function runImageRequest() {
     aspect_ratio: aspectRatioSelect.value,
     image_size: imageSizeSelect.value,
   };
-  addUserBubble(prompt, requestSource);
-  const pendingBubble = addAssistantBubble({ pending: true, settings: requestSettings });
+  appendUserBubble(prompt, requestSource);
+  const pendingBubble = appendAssistantBubble({ pending: true, settings: requestSettings });
   setStatus(isEdit ? "Editing image..." : "Generating image...");
   try {
-    const response = await fetch(isEdit ? "/api/image/edit" : "/api/image/generate", {
+    const response = await apiFetch(isEdit ? "/api/image/edit" : "/api/image/generate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": getCsrfToken(),
-      },
       body: JSON.stringify(
         isEdit
-          ? { prompt, input_image: selectedSourceImage, ...requestSettings }
-          : { prompt, ...requestSettings },
+          ? { conversation_id: state.activeConversationId, prompt, input_image: selectedSourceImage, ...requestSettings }
+          : { conversation_id: state.activeConversationId, prompt, ...requestSettings },
       ),
-      credentials: "same-origin",
     });
     const data = await parseApiResponse(response);
     if (!response.ok) {
@@ -369,17 +498,12 @@ async function runImageRequest() {
       .map((image) => (typeof image === "string" ? image : image?.url || image?.base64))
       .filter(Boolean);
     pendingBubble.remove();
-    addAssistantBubble({ text: data.text || "", images, settings: data.settings || requestSettings });
+    appendAssistantBubble({ text: data.text || "", images, settings: data.settings || requestSettings });
+    upsertConversation(data.conversation);
 
     promptInput.value = "";
     autosizeInput();
-    setStatus(
-      data.text
-        ? "Response ready."
-        : isEdit
-          ? "Image edited."
-          : "Image generated.",
-    );
+    setStatus(data.text ? "Response ready." : isEdit ? "Image edited." : "Image generated.");
     setSelectedSource(null);
     window.setTimeout(() => setStatus(""), 1400);
   } catch (_error) {
@@ -392,13 +516,29 @@ async function runImageRequest() {
   }
 }
 
-pickSourceButton.addEventListener("click", () => {
-  sourceUpload.click();
-});
+function clearSelectedCard() {
+  document.querySelectorAll(".image-card.selected").forEach((card) => card.classList.remove("selected"));
+}
 
-clearSourceButton.addEventListener("click", () => {
-  setSelectedSource(null);
-});
+function setSelectedSource(src, sourceType = "selected") {
+  selectedSourceImage = src || null;
+  if (selectedSourceImage) {
+    const supportsEdit = selectedModelSupportsEdit();
+    generateButton.title = supportsEdit ? "Edit selected image" : "Selected model does not support reference edits";
+    sourceStatus.textContent = supportsEdit
+      ? sourceType === "upload" ? "Uploaded reference" : "Selected reference"
+      : "Reference not supported";
+    sourcePreviewImage.src = selectedSourceImage;
+    sourcePreview.classList.remove("hidden");
+  } else {
+    generateButton.title = "Generate image";
+    sourceStatus.textContent = "New image";
+    sourcePreviewImage.removeAttribute("src");
+    sourcePreview.classList.add("hidden");
+    clearSelectedCard();
+  }
+  updateGenerateButton();
+}
 
 function loadSourceFile(file) {
   if (!file) return;
@@ -425,10 +565,34 @@ function loadSourceFile(file) {
   reader.readAsDataURL(file);
 }
 
+function bindPromptStarters() {
+  document.querySelectorAll("[data-prompt]").forEach((button) => {
+    button.addEventListener("click", () => {
+      promptInput.value = button.dataset.prompt || "";
+      autosizeInput();
+      promptInput.focus();
+    });
+  });
+}
+
+newChatButton.addEventListener("click", startNewChat);
+conversationList.addEventListener("click", (event) => {
+  const item = event.target.closest(".image-conversation-item");
+  if (item) selectConversation(item.dataset.conversationId);
+});
+
+pickSourceButton.addEventListener("click", () => sourceUpload.click());
+clearSourceButton.addEventListener("click", () => setSelectedSource(null));
 sourceUpload.addEventListener("change", () => {
   const file = sourceUpload.files && sourceUpload.files[0];
   loadSourceFile(file);
   sourceUpload.value = "";
+});
+
+imageThread.addEventListener("scroll", () => {
+  if (imageThread.scrollTop < 80 && state.activeConversationId && state.hasMoreJobs && !state.loadingJobs) {
+    loadConversationJobs(state.activeConversationId, { prepend: true });
+  }
 });
 
 imageThread.addEventListener("click", (event) => {
@@ -445,12 +609,9 @@ imageThread.addEventListener("click", (event) => {
   }
   if (event.target.closest(".download-image")) return;
   const target = event.target;
-  if (!(target instanceof HTMLImageElement)) return;
-  if (!target.classList.contains("editable-image")) return;
-
+  if (!(target instanceof HTMLImageElement) || !target.classList.contains("editable-image")) return;
   const card = target.closest(".image-card");
   if (!card) return;
-
   clearSelectedCard();
   card.classList.add("selected");
   setSelectedSource(target.src, "selected");
@@ -473,14 +634,6 @@ promptInput.addEventListener("keydown", async (event) => {
   }
 });
 
-document.querySelectorAll("[data-prompt]").forEach((button) => {
-  button.addEventListener("click", () => {
-    promptInput.value = button.dataset.prompt || "";
-    autosizeInput();
-    promptInput.focus();
-  });
-});
-
 document.addEventListener("paste", (event) => {
   const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith("image/"));
   if (imageItem) loadSourceFile(imageItem.getAsFile());
@@ -492,11 +645,9 @@ document.addEventListener("dragover", (event) => {
     imageComposer.classList.add("drag-active");
   }
 });
-
 document.addEventListener("dragleave", (event) => {
   if (!event.relatedTarget) imageComposer.classList.remove("drag-active");
 });
-
 document.addEventListener("drop", (event) => {
   const file = Array.from(event.dataTransfer?.files || []).find((item) => item.type.startsWith("image/"));
   if (!file) return;
@@ -512,4 +663,5 @@ if (savedModel && imageModels.some((item) => item.model === savedModel && item.c
 }
 refreshImageControls();
 autosizeInput();
-scrollToLatestImage();
+resetThread();
+loadConversations();

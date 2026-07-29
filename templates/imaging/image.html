@@ -1,15 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Image · API Key Wrapper{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="/static/imaging/image.css?v=20260729-3" />
+<link rel="stylesheet" href="/static/imaging/image.css?v=20260729-4" />
 {% endblock %}
 {% block layout %}
 <section class="image-page" id="image-app" data-csrf-token="{{ csrf_token }}">
+    <aside class="image-chat-sidebar" aria-label="Image chats">
+        <div class="image-chat-sidebar-head">
+            <div>
+                <span class="eyebrow">Studio chats</span>
+                <h2>Images</h2>
+            </div>
+            <button id="new-image-chat" class="mini-action" type="button" aria-label="New image chat">+</button>
+        </div>
+        <div id="image-conversation-list" class="image-conversation-list">
+            <p class="image-list-hint">Loading chats…</p>
+        </div>
+    </aside>
     <section class="image-workspace">
         <header class="image-header">
             <div>
                 <span class="eyebrow">Creative workspace</span>
-                <h1>Image Studio</h1>
+                <h1 id="image-chat-title">Image Studio</h1>
                 <p class="muted">Generate a new image or refine one you already have.</p>
             </div>
             <span class="studio-badge"><span aria-hidden="true">✦</span> AI image tools</span>
@@ -17,51 +29,16 @@
 
         <section class="image-feed">
             <div id="image-thread" class="image-thread" aria-live="polite">
-                {% for job in jobs %}
-                    <div class="image-message user">
-                        <div class="message-bubble user">
-                            <div class="message-role">You</div>
-                            <p class="message-text user-text">{{ job.prompt|linebreaksbr }}</p>
-                            <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
-                        </div>
+                <div id="image-empty" class="image-empty">
+                    <div class="empty-orbit" aria-hidden="true">✦</div>
+                    <h2>Bring an idea to life</h2>
+                    <p>Describe the result, add a reference if you have one, or start with an example.</p>
+                    <div class="prompt-starters">
+                        <button type="button" data-prompt="A premium studio product photo on a clean sculptural set, soft directional lighting, editorial composition">Product photo</button>
+                        <button type="button" data-prompt="A bold cinematic poster with striking typography, dramatic lighting, and a polished campaign aesthetic">Campaign poster</button>
+                        <button type="button" data-prompt="A charming illustrated scene with expressive characters, rich texture, and a warm storybook palette">Storybook scene</button>
                     </div>
-                    <div class="image-message assistant">
-                        <div class="message-bubble assistant">
-                            <div class="assistant-head">
-                                <span class="assistant-avatar" aria-hidden="true">✦</span>
-                                <span class="message-role">{{ job.model_label }}</span>
-                                <span class="model-chip">{{ job.aspect_ratio }} · {{ job.image_size }}</span>
-                            </div>
-                            {% if job.result_text %}
-                                <p class="message-text">{{ job.result_text|linebreaksbr }}</p>
-                            {% endif %}
-                            {% for url in job.result_urls %}
-                                <figure class="image-card">
-                                    <img src="{{ url }}" alt="Generated image" class="editable-image" />
-                                    <figcaption class="image-card-actions">
-                                        <button class="image-action edit-image" type="button">Edit image</button>
-                                        <a class="image-action download-image" href="{{ url }}" download="generated-image.png">Download</a>
-                                    </figcaption>
-                                </figure>
-                            {% endfor %}
-                            {% if not job.result_text and not job.result_urls %}
-                                <p class="message-text">No content returned.</p>
-                            {% endif %}
-                            <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
-                        </div>
-                    </div>
-                {% empty %}
-                    <div id="image-empty" class="image-empty">
-                        <div class="empty-orbit" aria-hidden="true">✦</div>
-                        <h2>Bring an idea to life</h2>
-                        <p>Describe the result, add a reference if you have one, or start with an example.</p>
-                        <div class="prompt-starters">
-                            <button type="button" data-prompt="A premium studio product photo on a clean sculptural set, soft directional lighting, editorial composition">Product photo</button>
-                            <button type="button" data-prompt="A bold cinematic poster with striking typography, dramatic lighting, and a polished campaign aesthetic">Campaign poster</button>
-                            <button type="button" data-prompt="A charming illustrated scene with expressive characters, rich texture, and a warm storybook palette">Storybook scene</button>
-                        </div>
-                    </div>
-                {% endfor %}
+                </div>
             </div>
         </section>
 
@@ -115,5 +92,5 @@
 </section>
 
 {{ image_models|json_script:"image-models-data" }}
-<script type="module" src="/static/imaging/image.js?v=20260729-3"></script>
+<script type="module" src="/static/imaging/image.js?v=20260729-4"></script>
 {% endblock %}

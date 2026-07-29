@@ -1,73 +1,64 @@
 {% extends "base.html" %}
 {% block title %}Image Feedback · API Key Wrapper{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="/static/imaging/image.css" />
-<link rel="stylesheet" href="/static/imaging/feedback.css" />
+<link rel="stylesheet" href="/static/imaging/image.css?v=20260729-4" />
+<link rel="stylesheet" href="/static/imaging/feedback.css?v=20260729-4" />
 {% endblock %}
 {% block layout %}
 <section class="image-page feedback-page" id="feedback-app" data-csrf-token="{{ csrf_token }}">
-    <header class="image-header">
-        <div>
-            <h1>Image Feedback</h1>
-            <p class="muted">Upload an image and ask for description, spelling issues, and improvement comments.</p>
+    <aside class="image-chat-sidebar" aria-label="Feedback chats">
+        <div class="image-chat-sidebar-head">
+            <div>
+                <span class="eyebrow">Feedback chats</span>
+                <h2>Images</h2>
+            </div>
+            <button id="new-feedback-chat" class="mini-action" type="button" aria-label="New feedback chat">+</button>
         </div>
-    </header>
+        <div id="feedback-conversation-list" class="image-conversation-list">
+            <p class="image-list-hint">Loading chats…</p>
+        </div>
+    </aside>
+    <section class="image-workspace">
+        <header class="image-header">
+            <div>
+                <span class="eyebrow">Image review</span>
+                <h1 id="feedback-chat-title">Image Feedback</h1>
+                <p class="muted">Upload an image and ask for description, spelling issues, and improvement comments.</p>
+            </div>
+        </header>
 
-    <section class="image-feed">
-        <div id="feedback-thread" class="image-thread">
-            {% for job in jobs %}
-                <div class="image-message user">
-                    <div class="message-bubble user">
-                        <div class="message-role">You</div>
-                        <p class="message-text user-text">{{ job.prompt|linebreaksbr }}</p>
-                        <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
-                    </div>
+        <section class="image-feed">
+            <div id="feedback-thread" class="image-thread" aria-live="polite">
+                <div id="feedback-empty" class="image-empty">
+                    <div class="empty-orbit" aria-hidden="true">↗</div>
+                    <h2>Review an image</h2>
+                    <p>Upload or paste an image, then ask for text checks, comments, or design feedback.</p>
                 </div>
-                <div class="image-message assistant">
-                    <div class="message-bubble assistant">
-                        <div class="assistant-head">
-                            <span class="message-role">Nano Banana</span>
-                            <span class="model-chip">Gemini 2.5 Flash Image</span>
-                        </div>
-                        {% if job.result_text %}
-                            <p class="message-text">{{ job.result_text|linebreaksbr }}</p>
-                        {% endif %}
-                        {% for url in job.result_urls %}
-                            <figure class="image-card">
-                                <img src="{{ url }}" alt="Feedback image result" class="editable-image" />
-                            </figure>
-                        {% endfor %}
-                        {% if not job.result_text and not job.result_urls %}
-                            <p class="message-text">No content returned.</p>
-                        {% endif %}
-                        <div class="message-meta">{{ job.created_at|date:"M j, g:i A" }}</div>
-                    </div>
+            </div>
+        </section>
+
+        <footer class="image-composer-wrap">
+            <div class="image-composer-shell">
+                <div class="image-toolbar">
+                    <button id="feedback-pick-source" class="text-btn" type="button">Upload image</button>
+                    <button id="feedback-clear-source" class="text-btn hidden" type="button">Clear image</button>
+                    <span id="feedback-source-status" class="source-status">Image: none selected</span>
+                    <input id="feedback-source-upload" type="file" accept="image/*" class="hidden" />
                 </div>
-            {% empty %}
-                <div id="feedback-empty" class="image-empty">Upload an image and ask for feedback to start.</div>
-            {% endfor %}
-        </div>
+                <div class="feedback-presets">
+                    <button class="preset-btn" data-prompt="Describe this image and summarize what is happening." type="button">Describe</button>
+                    <button class="preset-btn" data-prompt="Check all visible text for spelling/grammar issues and suggest corrections." type="button">Spelling Check</button>
+                    <button class="preset-btn" data-prompt="Give concise design feedback and practical improvements." type="button">Comments</button>
+                </div>
+                <div class="image-composer">
+                    <textarea id="feedback-prompt" rows="1" placeholder="Ask for description, spelling checks, or comments..." maxlength="2000"></textarea>
+                    <button id="feedback-send" class="generate-btn" type="button" aria-label="Send feedback request">➤</button>
+                </div>
+            </div>
+            <p id="feedback-status" class="composer-status hidden"></p>
+        </footer>
     </section>
-
-    <footer class="image-composer-wrap">
-        <div class="image-toolbar">
-            <button id="feedback-pick-source" class="text-btn" type="button">Upload image</button>
-            <button id="feedback-clear-source" class="text-btn hidden" type="button">Clear image</button>
-            <span id="feedback-source-status" class="source-status">Image: none selected</span>
-            <input id="feedback-source-upload" type="file" accept="image/*" class="hidden" />
-        </div>
-        <div class="feedback-presets">
-            <button class="preset-btn" data-prompt="Describe this image and summarize what is happening." type="button">Describe</button>
-            <button class="preset-btn" data-prompt="Check all visible text for spelling/grammar issues and suggest corrections." type="button">Spelling Check</button>
-            <button class="preset-btn" data-prompt="Give concise design feedback and practical improvements." type="button">Comments</button>
-        </div>
-        <div class="image-composer">
-            <textarea id="feedback-prompt" rows="1" placeholder="Ask for description, spelling checks, or comments..." maxlength="2000"></textarea>
-            <button id="feedback-send" class="generate-btn" type="button" aria-label="Send feedback request">➤</button>
-        </div>
-        <p id="feedback-status" class="composer-status hidden"></p>
-    </footer>
 </section>
 
-<script type="module" src="/static/imaging/feedback.js"></script>
+<script type="module" src="/static/imaging/feedback.js?v=20260729-4"></script>
 {% endblock %}

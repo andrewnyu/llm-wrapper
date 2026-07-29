@@ -3,9 +3,12 @@ from django.contrib.auth.decorators import login_required
 from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_datetime
+from django.views.decorators.http import require_http_methods
 
 from api_key_wrapper.chat.models import Conversation, Message
-from api_key_wrapper.imaging.models import ImageJob
+from api_key_wrapper.imaging.models import ImageConversation, ImageJob
 from api_key_wrapper.usage.services import (
     InsufficientCreditsError,
     charge_image_request,
@@ -34,6 +37,8 @@ DEFAULT_IMAGE_FEEDBACK_PROMPT = (
     "(3) Practical feedback and improvements."
 )
 MAX_IMAGE_PROMPT_CHARS = 2000
+IMAGE_CONVERSATION_PAGE_SIZE = 24
+IMAGE_JOB_PAGE_SIZE = 12
 
 
 def _image_options(payload):
@@ -101,6 +106,170 @@ def _parse_json_payload(request):
         return None, _json_error("Upload too large. Please use a smaller image.", status=413)
     except json.JSONDecodeError:
         return None, _json_error("Invalid JSON")
+
+
+def _valid_image_kind(kind):
+    return kind if kind in {ImageConversation.KIND_STUDIO, ImageConversation.KIND_FEEDBACK} else None
+
+
+def _default_image_title(kind):
+    return "New feedback chat" if kind == ImageConversation.KIND_FEEDBACK else "New image chat"
+
+
+def _image_title_from_prompt(prompt, kind):
+    clean = (prompt or "").strip()
+    if not clean or clean == "Image feedback":
+        return _default_image_title(kind)
+    return clean[:60]
+
+
+def _serialize_image_conversation(conversation):
+    return {
+        "id": str(conversation.id),
+        "title": conversation.title,
+        "kind": conversation.kind,
+        "createdAt": conversation.created_at.isoformat(),
+        "updatedAt": conversation.updated_at.isoformat(),
+    }
+
+
+def _serialize_image_job(job):
+    settings_payload = job.settings or {}
+    model_id = settings_payload.get("model") or ("gemini-2.5-flash-image" if job.kind == ImageJob.KIND_STUDIO else "")
+    model = get_image_model(model_id) if model_id else None
+    return {
+        "id": job.id,
+        "conversationId": str(job.conversation_id) if job.conversation_id else None,
+        "prompt": job.prompt,
+        "provider": job.provider,
+        "kind": job.kind,
+        "status": job.status,
+        "text": job.result_text,
+        "resultUrls": job.result_urls or [],
+        "settings": {
+            **settings_payload,
+            "model": model_id or settings_payload.get("model", ""),
+            "model_label": settings_payload.get("model_label") or (model["label"] if model else job.provider),
+            "aspect_ratio": settings_payload.get("aspect_ratio", "1:1"),
+            "image_size": settings_payload.get("image_size", "1K"),
+        },
+        "createdAt": job.created_at.isoformat(),
+    }
+
+
+def _parse_positive_int(value, default, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(parsed, maximum))
+
+
+def _parse_before(value):
+    if not value:
+        return None
+    parsed = parse_datetime(value)
+    return parsed
+
+
+def _image_conversation_for_request_or_404(request, conversation_id, *, kind=None):
+    filters = {"id": conversation_id, "user": request.user}
+    if kind:
+        filters["kind"] = kind
+    return get_object_or_404(ImageConversation, **filters)
+
+
+def _resolve_image_conversation(request, payload, kind, prompt):
+    conversation_id = payload.get("conversation_id") or payload.get("conversationId")
+    if conversation_id:
+        conversation = _image_conversation_for_request_or_404(request, conversation_id, kind=kind)
+        return conversation, False
+    return None, True
+
+
+def _create_image_conversation(request, kind, prompt):
+    return ImageConversation.objects.create(
+        user=request.user,
+        kind=kind,
+        title=_image_title_from_prompt(prompt, kind),
+    )
+
+
+def _touch_image_conversation(conversation, prompt, was_created):
+    update_fields = ["updated_at"]
+    if was_created or conversation.title in ("", "New image chat", "New feedback chat"):
+        conversation.title = _image_title_from_prompt(prompt, conversation.kind)
+        update_fields.append("title")
+    conversation.save(update_fields=update_fields)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def image_conversations(request):
+    if request.method == "GET":
+        kind = _valid_image_kind(request.GET.get("kind") or ImageConversation.KIND_STUDIO)
+        if not kind:
+            return _json_error("Unsupported image conversation kind")
+        limit = _parse_positive_int(request.GET.get("limit"), IMAGE_CONVERSATION_PAGE_SIZE, 50)
+        conversations = ImageConversation.objects.filter(user=request.user, kind=kind).order_by("-updated_at")
+        before = _parse_before(request.GET.get("before"))
+        if before:
+            conversations = conversations.filter(updated_at__lt=before)
+        page = list(conversations[: limit + 1])
+        return JsonResponse(
+            {
+                "items": [_serialize_image_conversation(item) for item in page[:limit]],
+                "hasMore": len(page) > limit,
+            }
+        )
+
+    payload, payload_error = _parse_json_payload(request)
+    if payload_error:
+        return payload_error
+    kind = _valid_image_kind(payload.get("kind") or ImageConversation.KIND_STUDIO)
+    if not kind:
+        return _json_error("Unsupported image conversation kind")
+    title = (payload.get("title") or _default_image_title(kind)).strip()[:120] or _default_image_title(kind)
+    conversation = ImageConversation.objects.create(user=request.user, kind=kind, title=title)
+    return JsonResponse(_serialize_image_conversation(conversation), status=201)
+
+
+@login_required
+@require_http_methods(["PATCH", "DELETE"])
+def image_conversation_detail(request, conversation_id):
+    conversation = _image_conversation_for_request_or_404(request, conversation_id)
+    if request.method == "DELETE":
+        conversation.delete()
+        return JsonResponse({"ok": True})
+
+    payload, payload_error = _parse_json_payload(request)
+    if payload_error:
+        return payload_error
+    title = (payload.get("title") or "").strip()[:120]
+    if not title:
+        return _json_error("title is required")
+    conversation.title = title
+    conversation.save(update_fields=["title", "updated_at"])
+    return JsonResponse(_serialize_image_conversation(conversation))
+
+
+@login_required
+@require_http_methods(["GET"])
+def image_conversation_jobs(request, conversation_id):
+    conversation = _image_conversation_for_request_or_404(request, conversation_id)
+    limit = _parse_positive_int(request.GET.get("limit"), IMAGE_JOB_PAGE_SIZE, 30)
+    jobs = conversation.jobs.order_by("-created_at")
+    before = _parse_before(request.GET.get("before"))
+    if before:
+        jobs = jobs.filter(created_at__lt=before)
+    page = list(jobs[: limit + 1])
+    chronological = list(reversed(page[:limit]))
+    return JsonResponse(
+        {
+            "items": [_serialize_image_job(item) for item in chronological],
+            "hasMore": len(page) > limit,
+        }
+    )
 
 
 @login_required
@@ -230,6 +399,12 @@ def image_generate(request):
     prompt = prompt.strip()
     if len(prompt) > MAX_IMAGE_PROMPT_CHARS:
         return _json_error(f"prompt exceeds max length ({MAX_IMAGE_PROMPT_CHARS})")
+    conversation, conversation_created = _resolve_image_conversation(
+        request,
+        payload,
+        ImageConversation.KIND_STUDIO,
+        prompt,
+    )
     options, options_error = _image_options(payload)
     if options_error:
         return options_error
@@ -272,8 +447,11 @@ def image_generate(request):
         return _json_insufficient(image_request_credits(), fresh_wallet.balance_credits)
 
     result_text = (result.text or "").strip()
+    if conversation is None:
+        conversation = _create_image_conversation(request, ImageConversation.KIND_STUDIO, prompt)
     job = ImageJob.objects.create(
         user=request.user,
+        conversation=conversation,
         prompt=prompt,
         provider=provider,
         kind=ImageJob.KIND_STUDIO,
@@ -286,12 +464,15 @@ def image_generate(request):
         ],
         settings=options,
     )
+    _touch_image_conversation(conversation, prompt, conversation_created)
 
     return JsonResponse(
         {
             "images": result.images,
             "text": result_text,
             "job_id": job.id,
+            "job": _serialize_image_job(job),
+            "conversation": _serialize_image_conversation(conversation),
             "settings": options,
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
@@ -317,6 +498,12 @@ def image_edit(request):
         return _json_error(f"prompt exceeds max length ({MAX_IMAGE_PROMPT_CHARS})")
     if not isinstance(input_image, str) or not input_image:
         return _json_error("input_image is required")
+    conversation, conversation_created = _resolve_image_conversation(
+        request,
+        payload,
+        ImageConversation.KIND_STUDIO,
+        prompt,
+    )
     options, options_error = _image_options(payload)
     if options_error:
         return options_error
@@ -365,8 +552,11 @@ def image_edit(request):
         return _json_insufficient(image_request_credits(), fresh_wallet.balance_credits)
 
     result_text = (result.text or "").strip()
+    if conversation is None:
+        conversation = _create_image_conversation(request, ImageConversation.KIND_STUDIO, prompt)
     job = ImageJob.objects.create(
         user=request.user,
+        conversation=conversation,
         prompt=prompt,
         provider=provider,
         kind=ImageJob.KIND_STUDIO,
@@ -379,12 +569,15 @@ def image_edit(request):
         ],
         settings=options,
     )
+    _touch_image_conversation(conversation, prompt, conversation_created)
 
     return JsonResponse(
         {
             "images": result.images,
             "text": result_text,
             "job_id": job.id,
+            "job": _serialize_image_job(job),
+            "conversation": _serialize_image_conversation(conversation),
             "settings": options,
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
@@ -414,6 +607,12 @@ def image_feedback(request):
         return _json_error("input_image is required")
 
     final_prompt = prompt or DEFAULT_IMAGE_FEEDBACK_PROMPT
+    conversation, conversation_created = _resolve_image_conversation(
+        request,
+        payload,
+        ImageConversation.KIND_FEEDBACK,
+        prompt or "Image feedback",
+    )
 
     credit_error = _check_image_credits(request.user)
     if credit_error:
@@ -454,8 +653,11 @@ def image_feedback(request):
         return _json_insufficient(image_request_credits(), fresh_wallet.balance_credits)
 
     result_text = (result.text or "").strip()
+    if conversation is None:
+        conversation = _create_image_conversation(request, ImageConversation.KIND_FEEDBACK, prompt or "Image feedback")
     job = ImageJob.objects.create(
         user=request.user,
+        conversation=conversation,
         prompt=prompt or "Image feedback",
         provider=provider,
         kind=ImageJob.KIND_FEEDBACK,
@@ -466,13 +668,22 @@ def image_feedback(request):
             for image in result.images
             if image.get("url") or image.get("base64")
         ],
+        settings={
+            "model": "gemini-2.5-flash-image",
+            "model_label": "Gemini 2.5 Flash Image",
+            "aspect_ratio": "1:1",
+            "image_size": "1K",
+        },
     )
+    _touch_image_conversation(conversation, prompt or "Image feedback", conversation_created)
 
     return JsonResponse(
         {
             "images": result.images,
             "text": result_text,
             "job_id": job.id,
+            "job": _serialize_image_job(job),
+            "conversation": _serialize_image_conversation(conversation),
             "usage_charged": str(charged_credits),
             "remaining_credits": str(wallet.balance_credits),
         }

@@ -9,7 +9,7 @@ from api_key_wrapper.accounts.models import TwoFactorDevice, User
 from api_key_wrapper.gateway.key_resolver import get_api_key_for_provider, is_provider_configured
 from api_key_wrapper.gateway.model_catalog import get_chat_model, get_image_model, serialize_chat_models, serialize_image_models
 from api_key_wrapper.gateway.models import ProviderModel
-from api_key_wrapper.imaging.models import ImageJob
+from api_key_wrapper.imaging.models import ImageConversation, ImageJob
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult, ImageGenerationResult
 from api_key_wrapper.gateway.providers.glm import GLMClient
 from api_key_wrapper.gateway.providers.nano_banana import NanoBananaClient
@@ -201,6 +201,80 @@ class ImageApiTests(TestCase):
         self.assertEqual(called_payload["aspect_ratio"], "1:1")
         self.assertEqual(called_payload["image_size"], "1K")
 
+    def test_image_generate_creates_conversation_when_missing(self):
+        self.client.login(username="imager", password="TestPass123!")
+
+        mock_result = ImageGenerationResult(images=[{"url": "https://example.test/cat.png"}], text="Done")
+        with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "test-key"}, clear=False):
+            with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
+                mock_client.return_value.image_generate.return_value = mock_result
+                response = self.client.post(
+                    reverse("image_generate"),
+                    data='{"prompt":"minimal cat poster"}',
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["conversation"]["kind"], ImageConversation.KIND_STUDIO)
+        self.assertEqual(body["conversation"]["title"], "minimal cat poster")
+        job = ImageJob.objects.get(id=body["job_id"])
+        self.assertEqual(str(job.conversation_id), body["conversation"]["id"])
+
+    def test_image_conversation_jobs_are_paginated(self):
+        self.client.login(username="imager", password="TestPass123!")
+        conversation = ImageConversation.objects.create(
+            user=self.user,
+            kind=ImageConversation.KIND_STUDIO,
+            title="Paged",
+        )
+        first = ImageJob.objects.create(
+            user=self.user,
+            conversation=conversation,
+            prompt="first",
+            provider="nano_banana",
+            kind=ImageJob.KIND_STUDIO,
+            status="success",
+        )
+        second = ImageJob.objects.create(
+            user=self.user,
+            conversation=conversation,
+            prompt="second",
+            provider="nano_banana",
+            kind=ImageJob.KIND_STUDIO,
+            status="success",
+        )
+
+        response = self.client.get(
+            reverse("image_conversation_jobs", kwargs={"conversation_id": conversation.id}),
+            {"limit": 1},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["hasMore"])
+        self.assertEqual(body["items"][0]["id"], second.id)
+
+        response = self.client.get(
+            reverse("image_conversation_jobs", kwargs={"conversation_id": conversation.id}),
+            {"limit": 1, "before": body["items"][0]["createdAt"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["hasMore"])
+        self.assertEqual(body["items"][0]["id"], first.id)
+
+    def test_image_conversations_are_kind_filtered(self):
+        self.client.login(username="imager", password="TestPass123!")
+        studio = ImageConversation.objects.create(user=self.user, kind=ImageConversation.KIND_STUDIO, title="Studio")
+        ImageConversation.objects.create(user=self.user, kind=ImageConversation.KIND_FEEDBACK, title="Feedback")
+
+        response = self.client.get(reverse("image_conversations"), {"kind": "studio"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()["items"]], [str(studio.id)])
+
     def test_image_generate_rejects_invalid_model_settings(self):
         self.client.login(username="imager", password="TestPass123!")
         response = self.client.post(
@@ -291,6 +365,7 @@ class ImageApiTests(TestCase):
                 event_type=UsageEvent.EVENT_IMAGE_CONSUME,
             ).exists()
         )
+        self.assertFalse(ImageConversation.objects.filter(user=self.user).exists())
 
     def test_image_feedback_success_uses_default_prompt_when_missing(self):
         self.client.login(username="imager", password="TestPass123!")
@@ -307,10 +382,12 @@ class ImageApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["text"], "Found typo in the headline.")
+        self.assertEqual(response.json()["conversation"]["kind"], ImageConversation.KIND_FEEDBACK)
         called_payload = mock_client.return_value.image_edit.call_args[0][1]
         self.assertIn("Analyze this image", called_payload["prompt"])
         job = ImageJob.objects.latest("created_at")
         self.assertEqual(job.kind, ImageJob.KIND_FEEDBACK)
+        self.assertEqual(job.conversation.kind, ImageConversation.KIND_FEEDBACK)
 
     def test_image_feedback_requires_input_image(self):
         self.client.login(username="imager", password="TestPass123!")
