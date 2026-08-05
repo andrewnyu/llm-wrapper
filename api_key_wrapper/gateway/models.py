@@ -59,3 +59,27 @@ class ProviderModel(models.Model):
     def __str__(self) -> str:
         label = self.display_name or self.model
         return f"{self.get_provider_display()} - {label}"
+
+
+class GatewaySettings(models.Model):
+    """The one global, administrator-managed gateway configuration row."""
+
+    default_chat_provider = models.CharField(max_length=32, default=ProviderKey.PROVIDER_GLM)
+    default_chat_model = models.CharField(max_length=128, default="glm-5.2")
+    enabled_providers = models.JSONField(
+        default=list,
+        help_text="Provider IDs whose shared environment keys may be used.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Gateway settings"
+        verbose_name_plural = "Gateway settings"
+
+    def save(self, *args, **kwargs):
+        if not self.enabled_providers:
+            self.enabled_providers = [provider for provider, _label in ProviderKey.PROVIDER_CHOICES]
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return "Gateway settings"

@@ -7,8 +7,17 @@ from django.urls import reverse
 
 from api_key_wrapper.accounts.models import TwoFactorDevice, User
 from api_key_wrapper.gateway.key_resolver import get_api_key_for_provider, is_provider_configured
-from api_key_wrapper.gateway.model_catalog import get_chat_model, get_image_model, serialize_chat_models, serialize_image_models
-from api_key_wrapper.gateway.models import ProviderModel
+from api_key_wrapper.gateway.model_catalog import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_PROVIDER,
+    DEFAULT_IMAGE_MODEL,
+    get_chat_model,
+    get_default_chat_model,
+    get_image_model,
+    serialize_chat_models,
+    serialize_image_models,
+)
+from api_key_wrapper.gateway.models import GatewaySettings, ProviderModel
 from api_key_wrapper.imaging.models import ImageConversation, ImageJob
 from api_key_wrapper.gateway.providers.base import ChatCompletionResult, ImageGenerationResult
 from api_key_wrapper.gateway.providers.glm import GLMClient
@@ -17,6 +26,11 @@ from api_key_wrapper.usage.models import UsageEvent, UsageWallet
 
 
 class ChatModelCatalogTests(TestCase):
+    def test_chinese_models_are_the_defaults(self):
+        self.assertEqual(DEFAULT_CHAT_PROVIDER, "glm")
+        self.assertEqual(DEFAULT_CHAT_MODEL, "glm-5.2")
+        self.assertEqual(DEFAULT_IMAGE_MODEL, "glm-image")
+
     def test_configured_anthropic_key_enables_default_claude_models(self):
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False):
             models = serialize_chat_models()
@@ -31,6 +45,28 @@ class ChatModelCatalogTests(TestCase):
 
         self.assertTrue(any(item["provider"] == "glm" and item["configured"] for item in models))
         self.assertTrue(any(item["provider"] == "kimi" and item["configured"] for item in models))
+
+    def test_saved_default_chat_model_is_used_when_configured(self):
+        GatewaySettings.objects.create(
+            default_chat_provider="deepseek",
+            default_chat_model="deepseek-chat",
+            enabled_providers=["deepseek"],
+        )
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=False):
+            choice = get_default_chat_model()
+
+        self.assertEqual((choice["provider"], choice["model"]), ("deepseek", "deepseek-chat"))
+
+    def test_disabled_provider_key_cannot_be_used(self):
+        GatewaySettings.objects.create(
+            default_chat_provider="glm",
+            default_chat_model="glm-5.2",
+            enabled_providers=["glm"],
+        )
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            self.assertFalse(is_provider_configured("openai"))
+            with self.assertRaisesMessage(ValueError, "disabled by an administrator"):
+                get_api_key_for_provider("openai")
 
     def test_provider_specific_env_models_are_discovered(self):
         with patch.dict(
@@ -94,6 +130,47 @@ class ChatModelCatalogTests(TestCase):
         self.assertEqual(glm_image["model"], "glm-image")
         self.assertTrue(glm_image["configured"])
         self.assertIsNotNone(get_image_model("glm-image"))
+
+
+class GatewaySettingsViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="gateway-admin",
+            email="gateway-admin@example.com",
+            password="TestPass123!",
+            is_staff=True,
+        )
+        TwoFactorDevice.objects.create(user=self.user, secret="JBSWY3DPEHPK3PXP", confirmed=True)
+
+    def test_staff_can_save_default_and_allowed_providers(self):
+        self.client.login(username="gateway-admin", password="TestPass123!")
+        response = self.client.post(
+            reverse("gateway:settings"),
+            {
+                "default_chat_provider": "deepseek",
+                "default_chat_model": "deepseek-chat",
+                "enabled_providers": ["deepseek", "glm"],
+            },
+        )
+
+        self.assertRedirects(response, reverse("gateway:settings"))
+        config = GatewaySettings.objects.get(pk=1)
+        self.assertEqual(config.default_chat_provider, "deepseek")
+        self.assertEqual(config.default_chat_model, "deepseek-chat")
+        self.assertEqual(config.enabled_providers, ["deepseek", "glm"])
+
+    def test_non_staff_cannot_open_settings(self):
+        user = User.objects.create_user(
+            username="regular-user",
+            email="regular-user@example.com",
+            password="TestPass123!",
+        )
+        TwoFactorDevice.objects.create(user=user, secret="JBSWY3DPEHPK3PXP", confirmed=True)
+        self.client.login(username="regular-user", password="TestPass123!")
+
+        response = self.client.get(reverse("gateway:settings"))
+
+        self.assertEqual(response.status_code, 302)
 
 
 class ChatApiTests(TestCase):
@@ -187,7 +264,7 @@ class ImageApiTests(TestCase):
                 mock_client.return_value.image_edit.return_value = mock_result
                 response = self.client.post(
                     reverse("image_edit"),
-                    data='{"prompt":"add a hat","input_image":"data:image/png;base64,AAA"}',
+                    data='{"prompt":"add a hat","model":"gemini-3.1-flash-image","input_image":"data:image/png;base64,AAA"}',
                     content_type="application/json",
                 )
 
@@ -205,7 +282,7 @@ class ImageApiTests(TestCase):
         self.client.login(username="imager", password="TestPass123!")
 
         mock_result = ImageGenerationResult(images=[{"url": "https://example.test/cat.png"}], text="Done")
-        with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"GLM_API_KEY": "test-key"}, clear=False):
             with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
                 mock_client.return_value.image_generate.return_value = mock_result
                 response = self.client.post(
@@ -347,7 +424,7 @@ class ImageApiTests(TestCase):
         self.client.login(username="imager", password="TestPass123!")
         starting_balance = UsageWallet.objects.get(user=self.user).balance_credits
 
-        with patch.dict(os.environ, {"NANO_BANANA_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"GLM_API_KEY": "test-key"}, clear=False):
             with patch("api_key_wrapper.gateway.api_views.get_provider_client") as mock_client:
                 mock_client.return_value.image_generate.side_effect = RuntimeError("provider down")
                 response = self.client.post(
@@ -428,3 +505,4 @@ class GLMProviderTests(TestCase):
         self.assertEqual(call_kwargs["json"]["model"], "glm-image")
         self.assertEqual(call_kwargs["json"]["prompt"], "a clean product photo")
         self.assertEqual(call_kwargs["json"]["size"], "1728x960")
+        self.assertEqual(call_kwargs["timeout"], 60)

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ProviderKey, ProviderModel
+from .models import GatewaySettings, ProviderKey, ProviderModel
 
 
 @admin.register(ProviderKey)
@@ -16,3 +16,11 @@ class ProviderModelAdmin(admin.ModelAdmin):
     list_editable = ("display_name", "is_enabled")
     list_filter = ("provider", "is_enabled")
     search_fields = ("model", "display_name", "description")
+
+
+@admin.register(GatewaySettings)
+class GatewaySettingsAdmin(admin.ModelAdmin):
+    list_display = ("default_chat_provider", "default_chat_model", "updated_at")
+
+    def has_add_permission(self, request):
+        return not GatewaySettings.objects.exists()

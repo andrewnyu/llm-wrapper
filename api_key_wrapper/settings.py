@@ -161,6 +161,9 @@ SESSION_COOKIE_SECURE = os.environ.get("DJANGO_SESSION_COOKIE_SECURE", "0") == "
 CSRF_COOKIE_SECURE = os.environ.get("DJANGO_CSRF_COOKIE_SECURE", "0") == "1"
 
 API_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("API_REQUEST_TIMEOUT_SECONDS", "20"))
+# GLM-Image's HD mode may take about 20 seconds before network overhead. Keep
+# its timeout separate from low-latency chat calls.
+GLM_IMAGE_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("GLM_IMAGE_REQUEST_TIMEOUT_SECONDS", "60"))
 # Reference edits send images as base64 JSON. Keep enough headroom for a
 # 12 MB source plus JSON/base64 overhead while still rejecting runaway bodies.
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("DATA_UPLOAD_MAX_MEMORY_SIZE", str(32 * 1024 * 1024)))

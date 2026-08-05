@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Gateway Settings · API Key Wrapper{% endblock %}
+{% block content %}
+<h1>Gateway settings</h1>
+<p class="muted">Choose the default chat model and control which configured shared provider keys users may access. API-key values remain in the server environment.</p>
+<form method="post" class="stack-form">
+    {% csrf_token %}
+    {% for field in form %}
+        <div class="form-field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<p class="muted">{{ field.help_text }}</p>{% endif %}
+            {% for error in field.errors %}<p class="errorlist">{{ error }}</p>{% endfor %}
+        </div>
+    {% endfor %}
+    <button type="submit" class="button">Save settings</button>
+</form>
+{% endblock %}

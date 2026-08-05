@@ -5,6 +5,7 @@ import os
 from django.db import OperationalError, ProgrammingError
 
 from .key_resolver import ENV_VAR_BY_PROVIDER, is_provider_configured
+from .runtime_settings import get_gateway_settings
 
 
 DEFAULT_CHAT_MODELS_BY_PROVIDER = {
@@ -31,8 +32,10 @@ DEFAULT_CHAT_MODELS_BY_PROVIDER = {
     ),
 }
 
-DEFAULT_CHAT_PROVIDER = "openai"
-DEFAULT_CHAT_MODEL = "gpt-4o-mini"
+# Prefer providers that are broadly available in China.  The configured-model
+# fallback still lets installations without a GLM key use another provider.
+DEFAULT_CHAT_PROVIDER = "glm"
+DEFAULT_CHAT_MODEL = "glm-5.2"
 
 IMAGE_MODELS = (
     {
@@ -88,7 +91,7 @@ IMAGE_MODELS = (
     },
 )
 
-DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
+DEFAULT_IMAGE_MODEL = "glm-image"
 DEFAULT_IMAGE_ASPECT_RATIO = "1:1"
 DEFAULT_IMAGE_RESOLUTION = "1K"
 
@@ -214,15 +217,20 @@ def get_chat_model(provider, model):
 
 def get_default_chat_model():
     configured = [item for item in serialize_chat_models() if item["configured"]]
+    saved_settings = get_gateway_settings()
+    default_provider = (
+        saved_settings.default_chat_provider if saved_settings else DEFAULT_CHAT_PROVIDER
+    )
+    default_model = saved_settings.default_chat_model if saved_settings else DEFAULT_CHAT_MODEL
     preferred = next(
         (
             item
             for item in configured
-            if item["provider"] == DEFAULT_CHAT_PROVIDER and item["model"] == DEFAULT_CHAT_MODEL
+            if item["provider"] == default_provider and item["model"] == default_model
         ),
         None,
     )
-    return preferred or (configured[0] if configured else get_chat_model(DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL))
+    return preferred or (configured[0] if configured else get_chat_model(default_provider, default_model))
 
 
 def get_image_model(model):

@@ -1,6 +1,7 @@
 import os
 
 from .models import ProviderKey
+from .runtime_settings import is_provider_allowed
 
 ENV_VAR_BY_PROVIDER = {
     ProviderKey.PROVIDER_OPENAI: "OPENAI_API_KEY",
@@ -19,6 +20,8 @@ FALLBACK_ENV_VARS_BY_PROVIDER = {
 
 
 def get_api_key_for_provider(provider: str) -> str:
+    if not is_provider_allowed(provider):
+        raise ValueError(f"Provider '{provider}' is disabled by an administrator")
     env_var = ENV_VAR_BY_PROVIDER.get(provider)
     if not env_var:
         raise ValueError("Provider not supported")
@@ -32,6 +35,8 @@ def get_api_key_for_provider(provider: str) -> str:
 
 
 def is_provider_configured(provider: str) -> bool:
+    if not is_provider_allowed(provider):
+        return False
     env_var = ENV_VAR_BY_PROVIDER.get(provider)
     env_vars = (env_var, *FALLBACK_ENV_VARS_BY_PROVIDER.get(provider, ())) if env_var else ()
     return any(os.environ.get(candidate, "").strip() for candidate in env_vars)
@@ -48,6 +53,7 @@ def configured_provider_status():
                 "label": label,
                 "env_var": env_var,
                 "fallback_env_vars": FALLBACK_ENV_VARS_BY_PROVIDER.get(provider, ()),
+                "allowed": is_provider_allowed(provider),
                 "configured": configured,
             }
         )

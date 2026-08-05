@@ -22,7 +22,9 @@
                     {% endfor %}
                 </td>
                 <td>
-                    {% if row.configured %}
+                    {% if not row.allowed %}
+                        <span class="message error">Disabled</span>
+                    {% elif row.configured %}
                         <span class="message success">Configured</span>
                     {% else %}
                         <span class="message error">Missing</span>

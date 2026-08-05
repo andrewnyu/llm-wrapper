@@ -14,6 +14,10 @@ class GLMClient(ProviderClient):
         "9:16": "960x1728",
         "16:9": "1728x960",
     }
+    # GLM-Image's HD generation commonly takes around 20 seconds.  Do not use
+    # the short shared chat timeout, or ordinary successful generations can
+    # expire at the gateway boundary.
+    image_request_timeout_seconds = 60
 
     def chat_stream(self, api_key, payload):
         return stream_openai_compatible_chat(
@@ -54,7 +58,10 @@ class GLMClient(ProviderClient):
                 "prompt": payload.get("prompt", ""),
                 "size": self.image_sizes.get(payload.get("aspect_ratio"), "1280x1280"),
             },
-            timeout=settings.API_REQUEST_TIMEOUT_SECONDS,
+            timeout=max(
+                settings.API_REQUEST_TIMEOUT_SECONDS,
+                getattr(settings, "GLM_IMAGE_REQUEST_TIMEOUT_SECONDS", self.image_request_timeout_seconds),
+            ),
         )
         response.raise_for_status()
         data = response.json()

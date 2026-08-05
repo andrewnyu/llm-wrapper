@@ -59,7 +59,7 @@ The **API Keys** page is read-only and shows which provider env vars are configu
 
 ## Chat models
 
-The Chat page auto-detects configured providers from `.env`. A provider's built-in default chat models become selectable when its provider key is present:
+The app defaults to GLM-5.2 for chat and GLM-Image for image generation. The Chat page auto-detects configured providers from `.env`; if GLM is not configured, it falls back to another configured provider. A provider's built-in default chat models become selectable when its provider key is present:
 
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
@@ -95,7 +95,7 @@ The Image page supports:
 - Upload, paste, or drag-and-drop references
 - Prompt starters, edit-again actions, and image downloads
 
-Set `NANO_BANANA_API_KEY` or `GOOGLE_API_KEY` in `.env`, then restart the server. GLM image generation is available when `GLM_API_KEY` is set. Image model IDs and allowed output settings live in `api_key_wrapper/gateway/model_catalog.py`.
+Set `GLM_API_KEY` in `.env`, then restart the server. GLM-Image is the default image model and uses a 60-second provider timeout by default because its HD requests can take around 20 seconds. Set `GLM_IMAGE_REQUEST_TIMEOUT_SECONDS` to adjust it. Nano Banana remains available with `NANO_BANANA_API_KEY` or `GOOGLE_API_KEY`. Image model IDs and allowed output settings live in `api_key_wrapper/gateway/model_catalog.py`.
 
 ## Account creation
 
